@@ -18,8 +18,9 @@ const int RELAY_CLOSE_PIN = 25;
 const int RELAY_FOTO = 27; // Pin usato per l'impulso di stop (fotocellula/sicurezza)
 const int LIMIT_SWITCH_OPEN_PIN = 22;
 const int LIMIT_SWITCH_CLOSE_PIN = 32;
-const int ULTRASONIC_ECHO_PIN = 23;
-const int ULTRASONIC_TRIG_PIN = 16;
+const int ULTRASONIC_PIN = 23;
+//const int ULTRASONIC_ECHO_PIN = 23;
+//const int ULTRASONIC_TRIG_PIN = 16;
 const int LED_LIMIT_SWITCH_OPEN_PIN = 13;
 const int LED_LIMIT_SWITCH_CLOSE_PIN = 14;
 const int LED_SENSOR_PIN = 17;
@@ -49,6 +50,7 @@ MyTimer limitControlSensorTimer; const unsigned long CONTROL_ACTIVATE_DELAY_MS =
 MyTimer ControlTelecomandoTimer; const unsigned long TELECOMANDO_DELAY_MS = 500;
 MyTimer statusReportTimer; const unsigned long HEARTBEAT_INTERVAL_SHORT_MS = HEARTBEAT_INTERVAL_MS / 2;
 MyTimer checkInputTimer; const unsigned long INPUT_DELAY_MS = 100;
+MyTimer checkSensorTimer;  const unsigned long INPUT_SENSOR_DELAY_MS = 500;
 
 
 // Forward declaration
@@ -56,7 +58,7 @@ void handleGateAction(CommandType command);
 void sendStatusUpdate();
 
 void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
-    if (!macEqual(mac, macCentrale)) {
+    if (!macEqual(mac, macCentralMaster)) {
         #ifdef DEBUG
             Serial.println("[GARAGE] RX: Ignorato (non centrale)");
         #endif
@@ -108,13 +110,13 @@ void handleInternalAction(InternalGateAction action) {
     switch (action) {
         case ACTION_OPEN:
             // Avvia Apertura
-            if (gate.actual != GATE_ACTUAL_OPENING) {
+            if (gate.gateActual != GATE_ACTUAL_OPENING) {
                 // Invia impulso di apertura
                 triggerPin(RELAY_OPEN_PIN, LOW); 
-                if (gate.actual == GATE_ACTUAL_CLOSED)  gateOpen = true;
+                if (gate.gateActual == GATE_ACTUAL_CLOSED)  gateOpen = true;
                 else {
                     digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, LOW);
-                    gate.actual = GATE_ACTUAL_OPENING; 
+                    gate.gateActual = GATE_ACTUAL_OPENING; 
                     gate.isMoving = true;
                     gateOpen = false;
                     controlSensor = true;
@@ -128,14 +130,13 @@ void handleInternalAction(InternalGateAction action) {
             break;
         case ACTION_CLOSE:
             // Avvia Chiusura
-            if (gate.actual != GATE_ACTUAL_CLOSING) {
+            if (gate.gateActual != GATE_ACTUAL_CLOSING) {
                 // Invia impulso di chiusura
                 triggerPin(RELAY_CLOSE_PIN, LOW); 
                 gateClose = true; 
                 #ifdef DEBUG
                     Serial.println("Azione Interna: Avvio Chiusura");
                 #endif
-                
             }
             break;
         case ACTION_STOP:
@@ -147,11 +148,11 @@ void handleInternalAction(InternalGateAction action) {
                 gate.isMoving = false; 
                 autoCloseTimer.resetSet();
                 gateMovementTimeoutTimer.resetSet();
-                gate.actual = GATE_ACTUAL_STOPPED;
+                gate.gateActual = GATE_ACTUAL_STOPPED;
                 #ifdef DEBUG
                     Serial.println("Azione Interna: Cancello Fermato");
                 #endif
-                //sendStatusUpdate();
+                sendStatusUpdate();
             }
             break;
     }
@@ -162,18 +163,18 @@ void handleGateAction(CommandType command) {
     switch (command) {
         case CMD_TOGGLE:
             // --- LOGICA PULITA CMD_TOGGLE ---
-            if (gate.actual == GATE_ACTUAL_CLOSED) {
+            if (gate.gateActual == GATE_ACTUAL_CLOSED) {
              handleInternalAction(ACTION_OPEN);
             }
-            else if (gate.actual == GATE_ACTUAL_OPEN) {
+            else if (gate.gateActual == GATE_ACTUAL_OPEN) {
                 handleInternalAction(ACTION_CLOSE);
             }
             // Se fermo, riprendi con l'apertura di sicurezza
-            else if (gate.actual == GATE_ACTUAL_STOPPED) { 
+            else if (gate.gateActual == GATE_ACTUAL_STOPPED) { 
                 handleInternalAction(ACTION_CLOSE);
             }
             // Se in movimento, ferma
-            else if (gate.actual == GATE_ACTUAL_OPENING || gate.actual == GATE_ACTUAL_CLOSING) {
+            else if (gate.gateActual == GATE_ACTUAL_OPENING || gate.gateActual == GATE_ACTUAL_CLOSING) {
                 handleInternalAction(ACTION_STOP);
             }
             break;
@@ -186,11 +187,12 @@ void sendStatusUpdate() {
     EspNowMessage msg = {};
     msg.deviceId = THIS_DEVICE_ID;
     msg.command = CMD_STATUS;
-    msg.value = (uint16_t)gate.actual;
+    msg.gateActual = gate.gateActual;
+    msg.stateOn = gate.isMoving;
     msg.sequenceNum = sequenceNum++;
     statusReportTimer.set(HEARTBEAT_INTERVAL_SHORT_MS);
 
-    esp_err_t res = esp_now_send(macCentrale, (uint8_t*)&msg, sizeof(msg));
+    esp_err_t res = esp_now_send(macCentralMaster, (uint8_t*)&msg, sizeof(msg));
     #ifdef DEBUG
         Serial.printf("📤 Stato inviato (Stato=%u) → %s\n", msg.value, (res == ESP_OK ? "OK" : "ERR"));
     #endif
@@ -211,13 +213,13 @@ void setupEspNow() {
 
     // Aggiungi peer centrale
     esp_now_peer_info_t peerInfo = {};
-    memcpy(peerInfo.peer_addr, macCentrale, 6);
+    memcpy(peerInfo.peer_addr, macCentralMaster, 6);
     peerInfo.channel = WIFI_CHANNEL;
     peerInfo.encrypt = true;
     memcpy(peerInfo.lmk, espNowLtk, 16);
     esp_now_add_peer(&peerInfo);
 }
-
+/*
 // --- LOGICA SENSORI (MANTENUTA ESATTAMENTE) ---
 long readUltrasonicDistance() {
   digitalWrite(ULTRASONIC_TRIG_PIN, LOW); delayMicroseconds(2);
@@ -248,10 +250,10 @@ bool isObstacleDetected() {
 
     return (avg <= DETECTION_THRESHOLD);
 }
-
+*/
 // --- LOGICA FINE CORSA ---
 void limitSwitch() {
-    switch (gate.actual) {
+    switch (gate.gateActual) {
         case GATE_ACTUAL_CLOSED:
             // Finecorsa Chiusura Aperto -> Cancello in Apertura
             if (digitalRead(LIMIT_SWITCH_CLOSE_PIN) == HIGH) {
@@ -259,12 +261,12 @@ void limitSwitch() {
                 if (limitSwitchTimer.check()) {
                     if (gateOpen) {
                         digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, LOW);
-                        gate.actual = GATE_ACTUAL_OPENING; 
+                        gate.gateActual = GATE_ACTUAL_OPENING; 
                         gate.isMoving = true;
                         gateOpen = false;
                         controlSensor = true;
                         gateMovementTimeoutTimer.set(GATE_MOVEMENT_TIMEOUT_MS);
-                        //sendStatusUpdate();
+                        sendStatusUpdate();
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet(); 
@@ -276,12 +278,12 @@ void limitSwitch() {
                 if (limitSwitchTimer.check()) {
                     if (gate.isMoving) {
                         digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, HIGH);
-                        gate.actual = GATE_ACTUAL_CLOSED;
+                        gate.gateActual = GATE_ACTUAL_CLOSED;
                         controlSensorState = false;
                         gate.isMoving = false; 
                         gateMovementTimeoutTimer.resetSet();
                         limitControlSensorTimer.resetSet();
-                        //sendStatusUpdate();
+                        sendStatusUpdate();
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet(); 
@@ -293,11 +295,11 @@ void limitSwitch() {
                 if (limitSwitchTimer.check()) {
                     if (gateClose) {
                         digitalWrite(LED_LIMIT_SWITCH_OPEN_PIN, LOW);
-                        gate.actual = GATE_ACTUAL_CLOSING; 
+                        gate.gateActual = GATE_ACTUAL_CLOSING; 
                         gate.isMoving = true;
                         gateClose = false;
                         gateMovementTimeoutTimer.set(GATE_MOVEMENT_TIMEOUT_MS);
-                        //sendStatusUpdate();
+                        sendStatusUpdate();
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet(); 
@@ -309,7 +311,7 @@ void limitSwitch() {
                 if (limitSwitchTimer.check()) {
                     if (gate.isMoving) {
                         digitalWrite(LED_LIMIT_SWITCH_OPEN_PIN, HIGH); 
-                        gate.actual = GATE_ACTUAL_OPEN; 
+                        gate.gateActual = GATE_ACTUAL_OPEN; 
                         gate.isMoving = false;
                         gateMovementTimeoutTimer.resetSet();
                         
@@ -320,7 +322,7 @@ void limitSwitch() {
                                 autoCloseTimer.set(AUTO_CLOSE_DELAY_MS);
                             }
                         } else autoCloseTimer.set(AUTO_CLOSE_DELAY_MS);
-                        //sendStatusUpdate();
+                        sendStatusUpdate();
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet();
@@ -334,11 +336,21 @@ void telecomando() {
     if (digitalRead(TELECOMANDO_PIN) == LOW) {
         if (!ControlTelecomandoTimer.isSet()) ControlTelecomandoTimer.set(TELECOMANDO_DELAY_MS); 
         if (ControlTelecomandoTimer.check()) {
-            if  (!autoCloseTimer.isSet() && gate.actual == GATE_ACTUAL_OPEN && !gateClose) handleInternalAction(ACTION_CLOSE);
+            if  (!autoCloseTimer.isSet() && gate.gateActual == GATE_ACTUAL_OPEN && !gateClose) handleInternalAction(ACTION_CLOSE);
             else if (!gateOpen)  handleInternalAction(ACTION_OPEN);
         }
     } else if (ControlTelecomandoTimer.isSet()) ControlTelecomandoTimer.resetSet(); 
 }
+
+bool isObstacleDetected () {
+    if (digitalRead(ULTRASONIC_PIN) == LOW) {
+        if (checkSensorTimer.check()) {
+            return true;
+        }
+    } else checkSensorTimer.set(INPUT_SENSOR_DELAY_MS);
+    return false;
+}
+
 
 void setup() {
     Serial.begin(115200);
@@ -350,8 +362,7 @@ void setup() {
     pinMode(LED_LIMIT_SWITCH_CLOSE_PIN, OUTPUT);
     pinMode(LED_LIMIT_SWITCH_OPEN_PIN, OUTPUT);
     pinMode(LED_SENSOR_PIN, OUTPUT);
-    pinMode(ULTRASONIC_TRIG_PIN, OUTPUT); 
-    pinMode(ULTRASONIC_ECHO_PIN, INPUT);  
+    pinMode(ULTRASONIC_PIN, INPUT_PULLUP);  
     pinMode(LIMIT_SWITCH_CLOSE_PIN, INPUT_PULLUP);
     pinMode(LIMIT_SWITCH_OPEN_PIN, INPUT_PULLUP);
     pinMode(TELECOMANDO_PIN, INPUT_PULLUP);
@@ -361,12 +372,11 @@ void setup() {
     // Controlla e imposta lo stato iniziale del finecorsa di chiusura
     if (digitalRead(LIMIT_SWITCH_CLOSE_PIN) == LOW) { 
         digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, HIGH); 
-        gate.actual = GATE_ACTUAL_CLOSED;
+        gate.gateActual = GATE_ACTUAL_CLOSED;
     } 
 
-    //setupEspNow();
-    //sendStatusUpdate();
-    //statusReportTimer.set(HEARTBEAT_INTERVAL_SHORT_MS);
+    setupEspNow();
+    statusReportTimer.set(HEARTBEAT_INTERVAL_SHORT_MS);
 }
 
 
@@ -385,7 +395,7 @@ void loop() {
     }
 
     // 3. LETTURA SENSORE E LOGICA OSTACOLO
-    if (gate.isMoving || gate.actual == GATE_ACTUAL_OPEN) {
+    if (gate.isMoving || gate.gateActual == GATE_ACTUAL_OPEN) {
         if (isObstacleDetected()) {
             if (!obstacleDetected) {
                 obstacleDetected = true; 
@@ -408,11 +418,11 @@ void loop() {
     // --- TIMER DI RIMOZIONE OSTACOLO E RIATTIVAZIONE SENSORE ---
     if (limitSensorTimer.isSet() && limitSensorTimer.check()) {
         if (obstacleDetected) {
-            if (gate.actual != GATE_ACTUAL_OPENING && gate.actual != GATE_ACTUAL_OPEN) { 
+            if (gate.gateActual != GATE_ACTUAL_OPENING && gate.gateActual != GATE_ACTUAL_OPEN) { 
                 digitalWrite(LED_SENSOR_PIN, LOW); 
             }
             if (controlSensor && controlSensorState) { 
-                if (gate.actual == GATE_ACTUAL_OPEN) {
+                if (gate.gateActual == GATE_ACTUAL_OPEN) {
                     controlSensor = false; 
                     autoCloseTimer.set(AUTO_CLOSE_DELAY_MS);
                 }

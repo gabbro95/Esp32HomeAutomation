@@ -91,6 +91,7 @@ struct SmallGateState {
 
 // Stato Interno del sole
 struct LightState {
+	bool isOn = false;
 	bool isNight= false;
 };
 
