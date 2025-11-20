@@ -381,20 +381,14 @@ void setup() {
 
 
 void loop() {
-    // 1. FINE CORSA
+    // FINE CORSA
     if (!checkInputTimer.isSet()) checkInputTimer.set(INPUT_DELAY_MS);
     if (checkInputTimer.check()) {    
         limitSwitch();
         telecomando();
     }
 
-    // 2. RAPPORTO DI STATO PERIODICO
-    if (statusReportTimer.isSet() && statusReportTimer.check()) {
-        sendStatusUpdate();
-        statusReportTimer.set(HEARTBEAT_INTERVAL_SHORT_MS);
-    }
-
-    // 3. LETTURA SENSORE E LOGICA OSTACOLO
+    // LETTURA SENSORE E LOGICA OSTACOLO
     if (gate.isMoving || gate.gateActual == GATE_ACTUAL_OPEN) {
         if (isObstacleDetected()) {
             if (!obstacleDetected) {
@@ -440,4 +434,10 @@ void loop() {
 
     // Timeout Movimento
     if (gate.isMoving && gateMovementTimeoutTimer.check())  handleInternalAction(ACTION_STOP); 
+  
+    // RAPPORTO DI STATO PERIODICO
+    if (statusReportTimer.isSet() && statusReportTimer.check()) {
+        sendStatusUpdate();
+        statusReportTimer.set(HEARTBEAT_INTERVAL_SHORT_MS);
+    }
 }
