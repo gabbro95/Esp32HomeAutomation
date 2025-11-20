@@ -1,5 +1,45 @@
 #include "HomeDashboard.h"
 
+const int BUZZER_PIN = 21; 
+
+// ==========================================================
+// DEFINIZIONE DELLA MELODIA DING-DONG
+// ==========================================================
+// ==========================================================
+// MELODIA: QUICK CHIME (Durata Totale: ~800ms)
+// ==========================================================
+
+// Frequenze scelte dall'utente
+const int FREQ_LOW = 1000;
+const int FREQ_HIGH = 2000;
+const int FREQ_REST = 0; // Silenzio
+
+// La melodia è ora una sequenza di tono e pausa (0Hz)
+const int melody_chime[] = {
+  FREQ_LOW,  // 1. Basso
+  FREQ_REST, // Pausa
+  FREQ_HIGH, // 2. Alto
+  FREQ_REST, // Pausa
+  FREQ_LOW,  // 3. Basso (più lungo)
+  FREQ_REST, // Pausa
+  FREQ_HIGH, // 4. Alto (Finale, sostenuto)
+  FREQ_REST  // Silenzio finale
+};
+
+// Durata di ogni frequenza/pausa (in millisecondi)
+const int duration_chime[] = {
+  100, // 1. Basso (Nota)
+  50,  // Pausa
+  100, // 2. Alto (Nota)
+  50,  // Pausa
+  150, // 3. Basso (Nota)
+  50,  // Pausa
+  300, // 4. Alto (Nota finale)
+  100  // Silenzio finale (Reset)
+};
+
+const int MELODY_LENGTH = sizeof(melody_chime) / sizeof(melody_chime[0]);
+
 // Istanza globale del display TFT 
 TFT_eSPI tft = TFT_eSPI();
 
@@ -9,10 +49,49 @@ HomeDashboard* dashboardInstance = nullptr;
 // --- Buffer statici per LVGL ---
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf1[SCREEN_WIDTH * 10];
-static uint16_t calData[5] = {463, 3289, 359, 3322, 7}; 
+static uint16_t calData[5] = {481, 3030, 543, 3128, 4}; 
+// Nuovi dati calibrazione per Rotazione 0: {481, 3030, 543, 3128, 4}
+// Nuovi dati calibrazione per Rotazione 1: {463, 3289, 359, 3322, 7}
+
+
+// ==========================================================
+// FUNZIONE PER SUONARE LA MELODIA DING-DONG
+// ==========================================================
+void HomeDashboard::updateBuzzer() {
+    if (play && buzzerTimer.checkAndReset())    isPlaying = true;
+    if (!isPlaying) {
+        // Se la melodia non è in riproduzione, controlla se è da attivare
+        return;
+    }
+  
+     // 1. Controlla se il tempo per la nota corrente è scaduto
+
+    // Il tempo della nota è finito, fermiamo il tono precedente
+    noTone(BUZZER_PIN);
+    
+    // Passa alla nota successiva
+    currentNote++;
+
+    if (currentNote >= MELODY_LENGTH) {
+      // Melodia finita
+      isPlaying = false;
+      currentNote = 0; 
+      return;
+    }
+    
+    // Avvia il nuovo elemento (che sia un tono o silenzio)
+    int nextFrequency = melody_chime[currentNote];
+
+    if (nextFrequency != FREQ_REST) {
+      // Se non è silenzio (0 Hz), suona la nota
+      tone(BUZZER_PIN, nextFrequency, duration_chime[currentNote]); 
+      // NOTA: non passiamo la durata qui, perché il noTone è gestito dalla logica millis()
+    }
+    // Se è silenzio, resta su noTone (come impostato all'inizio del blocco)
+    return;
+}
 
 // --- Callback statici ---
-
 static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
   uint32_t w = (area->x2 - area->x1 + 1);
   uint32_t h = (area->y2 - area->y1 + 1);
@@ -62,8 +141,9 @@ HomeDashboard::HomeDashboard() :
     linkWatchdog(OFFLINE_TIMEOUT_MS * 2),
     spegnimentoDisplay(15000), 
     accensioneDisplay(500),
-    controlTouch(100),
-    linkDisplayTimer(5)
+    controlTouch(10),
+    linkDisplayTimer(5),
+    buzzerTimer(2000)
 {
     dashboardInstance = this;
 }
@@ -74,12 +154,16 @@ void HomeDashboard::begin() {
     #endif
 
     pinMode(TFT_BL, OUTPUT); 
+    pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(TFT_BL, HIGH);
     pinMode(TFT_IRQ, INPUT_PULLUP);
 
     lv_init();
     tft.begin();
-    tft.setRotation(1);
+    tft.setRotation(0);
+    // Colori di base per la calibrazione
+    uint32_t cal_fg = TFT_WHITE; 
+    uint32_t cal_bg = TFT_BLACK;
     tft.setTouch(calData);
 
     lv_disp_draw_buf_init(&draw_buf, buf1, NULL, SCREEN_WIDTH * 10);
@@ -117,6 +201,7 @@ void HomeDashboard::begin() {
     controlTouch.reset();
     accensioneDisplay.reset();
     spegnimentoDisplay.reset();
+    buzzerTimer.reset();
 }
 
 void HomeDashboard::setupEspNow() {
@@ -145,7 +230,7 @@ void HomeDashboard::showToast(const char* text, uint32_t duration_ms, bool isErr
     lv_obj_t * toast_obj = lv_obj_create(lv_layer_top());
     lv_obj_set_size(toast_obj, LV_SIZE_CONTENT, 50); 
     lv_obj_set_style_pad_all(toast_obj, 10, 0);
-    lv_obj_align(toast_obj, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_align(toast_obj, LV_ALIGN_BOTTOM_MID, 0, -10);
     
     lv_color_t bgColor;
     if (isError) {
@@ -302,7 +387,7 @@ void HomeDashboard::createGui() {
 
     auto createBtn = [&](lv_obj_t* parent, lv_obj_t*& btn, lv_obj_t*& label, const char* text) {
         btn = lv_btn_create(parent);
-        lv_obj_set_size(btn, 280, 50);
+        lv_obj_set_size(btn, 230, 50);
         lv_obj_add_event_cb(btn, btn_event_handler_trampoline, LV_EVENT_ALL, NULL);
         label = lv_label_create(btn);
         lv_label_set_text(label, text);
@@ -364,21 +449,25 @@ void HomeDashboard::updateLightGarageUI() {
 void HomeDashboard::updateSmallGateUI() {
   if (smallGate.smallGateActual) {
     lv_obj_set_style_bg_color(btn_small_gate, lv_color_hex(0x00AA00), 0);
-    lv_label_set_text(label_small_gate, "Cancello Piccolo: APERTO");
+    lv_label_set_text(label_small_gate, "Cancelletto: APERTO");
   } else {
     lv_obj_set_style_bg_color(btn_small_gate, lv_color_hex(0xAA0000), 0);
-    lv_label_set_text(label_small_gate, "Cancello Piccolo: CHIUSO");
+    lv_label_set_text(label_small_gate, "Cancelletto.: CHIUSO");
   }
 }
 
 void HomeDashboard::updateCallSmallGateUI() {
-  if (smallGate.isCall) {
-    lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0x00AA00), 0);
-    lv_label_set_text(label_call_small_gate, "Chiamata in corso");
-  } else {
-    lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0xAA0000), 0);
-    lv_label_set_text(label_call_small_gate, "Nessuna chiamata");
-  }
+    if (smallGate.isCall) {
+        lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0x00AA00), 0);
+        lv_label_set_text(label_call_small_gate, "Chiamata in corso");
+        play = true;
+        isPlaying = true;
+        buzzerTimer.reset();
+    } else {
+        lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0xAA0000), 0);
+        lv_label_set_text(label_call_small_gate, "Nessuna chiamata");
+        play = false;
+    }
 }
 
 void HomeDashboard::updateLigthExternUI() {
@@ -394,10 +483,10 @@ void HomeDashboard::updateLigthExternUI() {
 void HomeDashboard::updateLigthSmallGateUI() {
   if (smallGate.isOn) {
     lv_obj_set_style_bg_color(btn_light_small_gate, lv_color_hex(0x00AA00), 0);
-    lv_label_set_text(label_light_small_gate, "Cancello Piccolo: ACCESO");
+    lv_label_set_text(label_light_small_gate, "Cancelletto: ACCESO");
   } else {
     lv_obj_set_style_bg_color(btn_light_small_gate, lv_color_hex(0xAA0000), 0);
-    lv_label_set_text(label_light_small_gate, "Cancello Piccolo: SPENTO");
+    lv_label_set_text(label_light_small_gate, "Cancelletto: SPENTO");
   }
 }
 
@@ -459,9 +548,13 @@ void HomeDashboard::update() {
         digitalWrite(TFT_BL, HIGH); 
     }
 
-    if (linkDisplayTimer.checkAndReset() && !digitalRead(TFT_BL)) {
+    if (linkDisplayTimer.checkAndReset()) {
         lv_timer_handler();
     }
+
+    // 2. AGGIORNA IL BUZZER
+    // Questa funzione avanza la melodia se il tempo è scaduto
+    updateBuzzer();
   
     // Heartbeat
     if (heartbeatTimer.isExpired()) {

@@ -15,8 +15,12 @@
 #include "MyTimer.h"
 
 // Definizioni Display
-#define SCREEN_WIDTH  320
-#define SCREEN_HEIGHT 240
+// Rotazione display 0
+#define SCREEN_WIDTH  240
+#define SCREEN_HEIGHT 320
+// Rotazione display 1
+//#define SCREEN_WIDTH  320
+//#define SCREEN_HEIGHT 240
 #define MSG_QUEUE_SIZE 10 // Dimensione coda messaggi
 
 class HomeDashboard {
@@ -69,6 +73,13 @@ private:
     MyTimer accensioneDisplay;
     MyTimer controlTouch;
     MyTimer linkDisplayTimer;
+    MyTimer buzzerTimer;
+
+    // Variabili per il controllo della melodia
+    int currentNote = 0; // Indice della nota corrente da suonare
+    unsigned long noteStartTime = 0; // Quando è iniziata la nota corrente
+    bool isPlaying = false; // Stato: la melodia è in riproduzione?
+    bool play = false; // Stato: la melodia
 
     // Timer LVGL
     esp_timer_handle_t lvgl_tick_timer;
@@ -82,6 +93,9 @@ private:
     void updateLigthExternUI();
     void updateLigthSmallGateUI();
     void setNoLinkStatus();
+
+    // Funzione del campanello
+    void updateBuzzer();
 
     // Funzione interna che processa un singolo messaggio (Safe per GUI)
     void processSingleMessage(const EspNowMessage& msg); 
