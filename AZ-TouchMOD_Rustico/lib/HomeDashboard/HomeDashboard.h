@@ -16,11 +16,11 @@
 
 // Definizioni Display
 // Rotazione display 0
-#define SCREEN_WIDTH  240
-#define SCREEN_HEIGHT 320
+//#define SCREEN_WIDTH  240
+//#define SCREEN_HEIGHT 320
 // Rotazione display 1
-//#define SCREEN_WIDTH  320
-//#define SCREEN_HEIGHT 240
+#define SCREEN_WIDTH  320
+#define SCREEN_HEIGHT 240
 #define MSG_QUEUE_SIZE 10 // Dimensione coda messaggi
 
 class HomeDashboard {
@@ -76,7 +76,7 @@ private:
     MyTimer buzzerTimer;
 
     // Variabili per il controllo della melodia
-    int counter = 0; // Indice della nota corrente da suonare
+    int currentNote = 0; // Indice della nota corrente da suonare
     bool isPlaying = false; // Stato: la melodia è in riproduzione?
     bool play = false; // Stato: la melodia
 

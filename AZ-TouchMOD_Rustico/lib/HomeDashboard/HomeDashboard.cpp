@@ -1,9 +1,44 @@
 #include "HomeDashboard.h"
 
-const int BUZZER_PIN = 32; 
-const int RIPETIZIONI = 5; 
-const unsigned long INTERVALLO_CORTO = 100;
-const unsigned long INTERVALLO_LUNGO = 900;
+const int BUZZER_PIN = 21; 
+
+// ==========================================================
+// DEFINIZIONE DELLA MELODIA DING-DONG
+// ==========================================================
+// ==========================================================
+// MELODIA: QUICK CHIME (Durata Totale: ~800ms)
+// ==========================================================
+
+// Frequenze scelte dall'utente
+const int FREQ_LOW = 1000;
+const int FREQ_HIGH = 2000;
+const int FREQ_REST = 0; // Silenzio
+
+// La melodia è ora una sequenza di tono e pausa (0Hz)
+const int melody_chime[] = {
+  FREQ_LOW,  // 1. Basso
+  FREQ_REST, // Pausa
+  FREQ_HIGH, // 2. Alto
+  FREQ_REST, // Pausa
+  FREQ_LOW,  // 3. Basso (più lungo)
+  FREQ_REST, // Pausa
+  FREQ_HIGH, // 4. Alto (Finale, sostenuto)
+  FREQ_REST  // Silenzio finale
+};
+
+// Durata di ogni frequenza/pausa (in millisecondi)
+const int duration_chime[] = {
+  100, // 1. Basso (Nota)
+  50,  // Pausa
+  100, // 2. Alto (Nota)
+  50,  // Pausa
+  150, // 3. Basso (Nota)
+  50,  // Pausa
+  300, // 4. Alto (Nota finale)
+  100  // Silenzio finale (Reset)
+};
+
+const int MELODY_LENGTH = sizeof(melody_chime) / sizeof(melody_chime[0]);
 
 // Istanza globale del display TFT 
 TFT_eSPI tft = TFT_eSPI();
@@ -14,32 +49,45 @@ HomeDashboard* dashboardInstance = nullptr;
 // --- Buffer statici per LVGL ---
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf1[SCREEN_WIDTH * 10];
-static uint16_t calData[5] = {481, 3030, 543, 3128, 4}; 
 // Nuovi dati calibrazione per Rotazione 0: {481, 3030, 543, 3128, 4}
 // Nuovi dati calibrazione per Rotazione 1: {463, 3289, 359, 3322, 7}
+static uint16_t calData[5] = {463, 3289, 359, 3322, 7}; 
 
 
 // ==========================================================
 // FUNZIONE PER SUONARE LA MELODIA DING-DONG
 // ==========================================================
 void HomeDashboard::updateBuzzer() {
+    if (play && buzzerTimer.checkAndReset())    isPlaying = true;
     if (!isPlaying) {
         // Se la melodia non è in riproduzione, controlla se è da attivare
         return;
     }
-    if (counter < RIPETIZIONI) {
-        if (buzzerTimer.isExpired()) {
-            int state = digitalRead(BUZZER_PIN);
-            digitalWrite(BUZZER_PIN, !state);
-            if (!state) {
-                counter++;
-                buzzerTimer.setInterval(INTERVALLO_LUNGO);
-            } else buzzerTimer.setInterval(INTERVALLO_CORTO);
-        }
-    } else if (isPlaying) {
-        counter = 0;
-        isPlaying = false;
+  
+     // 1. Controlla se il tempo per la nota corrente è scaduto
+
+    // Il tempo della nota è finito, fermiamo il tono precedente
+    noTone(BUZZER_PIN);
+    
+    // Passa alla nota successiva
+    currentNote++;
+
+    if (currentNote >= MELODY_LENGTH) {
+      // Melodia finita
+      isPlaying = false;
+      currentNote = 0; 
+      return;
     }
+    
+    // Avvia il nuovo elemento (che sia un tono o silenzio)
+    int nextFrequency = melody_chime[currentNote];
+
+    if (nextFrequency != FREQ_REST) {
+      // Se non è silenzio (0 Hz), suona la nota
+      tone(BUZZER_PIN, nextFrequency, duration_chime[currentNote]); 
+      // NOTA: non passiamo la durata qui, perché il noTone è gestito dalla logica millis()
+    }
+    // Se è silenzio, resta su noTone (come impostato all'inizio del blocco)
     return;
 }
 
@@ -95,7 +143,7 @@ HomeDashboard::HomeDashboard() :
     accensioneDisplay(500),
     controlTouch(10),
     linkDisplayTimer(5),
-    buzzerTimer(INTERVALLO_CORTO)
+    buzzerTimer(2000)
 {
     dashboardInstance = this;
 }
@@ -106,7 +154,7 @@ void HomeDashboard::begin() {
     #endif
 
     pinMode(TFT_BL, OUTPUT); 
-    pinMode(BUZZER_PIN, OUTPUT); digitalWrite(BUZZER_PIN, HIGH);
+    pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(TFT_BL, HIGH);
     pinMode(TFT_IRQ, INPUT_PULLUP);
 
@@ -167,7 +215,7 @@ void HomeDashboard::setupEspNow() {
     esp_now_set_pmk(espNowLtk); 
 
     esp_now_peer_info_t peerInfo = {};
-    memcpy(peerInfo.peer_addr, macCentralMaster, 6);
+    memcpy(peerInfo.peer_addr, macCentral, 6);
     peerInfo.channel = WIFI_CHANNEL;
     peerInfo.encrypt = true;
     memcpy(peerInfo.lmk, espNowLtk, 16);
@@ -211,12 +259,12 @@ void HomeDashboard::showToast(const char* text, uint32_t duration_ms, bool isErr
 void HomeDashboard::sendMessage(DeviceType destDevice, CommandType command, uint32_t value) {
     EspNowMessage msg = {};
     msg.deviceId    = destDevice; 
-    msg.deviceReply = DEV_DISPLAY_CASA;      
+    msg.deviceReply = DEV_DISPLAY_RUSTICO;      
     msg.command     = command;
     msg.value       = value;
     msg.sequenceNum = sequenceNum++;
 
-    esp_err_t res = esp_now_send(macCentralMaster, (uint8_t*)&msg, sizeof(msg));
+    esp_err_t res = esp_now_send(macCentral, (uint8_t*)&msg, sizeof(msg));
 
     if (res == ESP_OK) {
         showToast("Invio OK", 1000, false); 
@@ -279,7 +327,6 @@ void HomeDashboard::processSingleMessage(const EspNowMessage& msg) {
             updateLigthExternUI();
         }
         linkWatchdog.reset();
-        return;
     }
 }
 
@@ -338,7 +385,7 @@ void HomeDashboard::createGui() {
 
     auto createBtn = [&](lv_obj_t* parent, lv_obj_t*& btn, lv_obj_t*& label, const char* text) {
         btn = lv_btn_create(parent);
-        lv_obj_set_size(btn, 230, 50);
+        lv_obj_set_size(btn, 270, 50);
         lv_obj_add_event_cb(btn, btn_event_handler_trampoline, LV_EVENT_ALL, NULL);
         label = lv_label_create(btn);
         lv_label_set_text(label, text);
@@ -413,7 +460,7 @@ void HomeDashboard::updateCallSmallGateUI() {
         lv_label_set_text(label_call_small_gate, "Chiamata in corso");
         play = true;
         isPlaying = true;
-        buzzerTimer.setInterval(INTERVALLO_CORTO);
+        buzzerTimer.reset();
     } else {
         lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0xAA0000), 0);
         lv_label_set_text(label_call_small_gate, "Nessuna chiamata");
