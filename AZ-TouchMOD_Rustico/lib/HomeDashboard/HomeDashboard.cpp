@@ -160,7 +160,7 @@ void HomeDashboard::begin() {
 
     lv_init();
     tft.begin();
-    tft.setRotation(0);
+    tft.setRotation(1);
     // Colori di base per la calibrazione
     uint32_t cal_fg = TFT_WHITE; 
     uint32_t cal_bg = TFT_BLACK;
