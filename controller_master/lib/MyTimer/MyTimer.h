@@ -9,7 +9,7 @@ public:
     // imposta un nuovo intervallo
     void setInterval(unsigned long intervalMs) {
         interval = intervalMs;
-        state = true;
+        state = false;
     }
 
     // resetta il timer al tempo corrente
