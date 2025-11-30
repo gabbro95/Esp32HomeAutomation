@@ -7,7 +7,7 @@
 #include "MyCommon.h"   
 #include "MySecrets.h"  
 
-//#define DEBUG
+#define DEBUG
 
 // Questo dispositivo
 const DeviceType THIS_DEVICE_ID = DEV_GATE;
@@ -24,7 +24,6 @@ const int ULTRASONIC_PIN = 23;
 const int LED_LIMIT_SWITCH_OPEN_PIN = 13;
 const int LED_LIMIT_SWITCH_CLOSE_PIN = 14;
 const int LED_SENSOR_PIN = 17;
-const int TELECOMANDO_PIN = 21;
 // --- FINE CONFIGURAZIONE PIN ---
 
 // --- DEFINIZIONI SENSORE ---
@@ -40,6 +39,7 @@ bool controlSensorState = false; // Stato del sensore per l'autochiusura
 uint32_t sequenceNum = 0; 
 bool gateOpen = false;
 bool gateClose = false;
+bool sendStatus = false;
 
 // Timer
 MyTimer gateMovementTimeoutTimer; const unsigned long GATE_MOVEMENT_TIMEOUT_MS = 40000;
@@ -47,10 +47,9 @@ MyTimer autoCloseTimer; const unsigned long AUTO_CLOSE_DELAY_MS = 10000;
 MyTimer limitSwitchTimer; const unsigned long DEBOUNCE_DELAY_MS = 2000;
 MyTimer limitSensorTimer; const unsigned long CONTROL_DELAY_MS = 5000;
 MyTimer limitControlSensorTimer; const unsigned long CONTROL_ACTIVATE_DELAY_MS = 100;
-MyTimer ControlTelecomandoTimer; const unsigned long TELECOMANDO_DELAY_MS = 500;
 MyTimer statusReportTimer; const unsigned long HEARTBEAT_INTERVAL_SHORT_MS = HEARTBEAT_INTERVAL_MS / 2;
 MyTimer checkInputTimer; const unsigned long INPUT_DELAY_MS = 100;
-MyTimer checkSensorTimer;  const unsigned long INPUT_SENSOR_DELAY_MS = 500;
+MyTimer checkSensorTimer;  const unsigned long INPUT_SENSOR_DELAY_MS = 50;
 
 
 // Forward declaration
@@ -75,7 +74,7 @@ void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
     EspNowMessage msg;
     memcpy(&msg, data, sizeof(msg));
 
-    handleGateAction(msg.command);
+    if (!gate.isMoving && msg.deviceId == DEV_GATE) handleGateAction(msg.command);
 
     #ifdef DEBUG
         Serial.printf("[GARAGE] RX: dev=%d cmd=%d val=%d seq=%lu\n",
@@ -110,17 +109,12 @@ void handleInternalAction(InternalGateAction action) {
     switch (action) {
         case ACTION_OPEN:
             // Avvia Apertura
-            if (gate.gateActual != GATE_ACTUAL_OPENING) {
+            if (gate.gateActual != GATE_ACTUAL_OPENING || gate.gateActual != GATE_ACTUAL_OPEN) {
                 // Invia impulso di apertura
                 triggerPin(RELAY_OPEN_PIN, LOW); 
-                if (gate.gateActual == GATE_ACTUAL_CLOSED)  gateOpen = true;
-                else {
+                if (gate.gateActual != GATE_ACTUAL_CLOSED)  {
                     digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, LOW);
                     gate.gateActual = GATE_ACTUAL_OPENING; 
-                    gate.isMoving = true;
-                    gateOpen = false;
-                    controlSensor = true;
-                    controlSensorState = false;
                     gateMovementTimeoutTimer.set(GATE_MOVEMENT_TIMEOUT_MS);
                 }
                 #ifdef DEBUG
@@ -164,7 +158,7 @@ void handleGateAction(CommandType command) {
         case CMD_TOGGLE:
             // --- LOGICA PULITA CMD_TOGGLE ---
             if (gate.gateActual == GATE_ACTUAL_CLOSED) {
-             handleInternalAction(ACTION_OPEN);
+                handleInternalAction(ACTION_OPEN);
             }
             else if (gate.gateActual == GATE_ACTUAL_OPEN) {
                 handleInternalAction(ACTION_CLOSE);
@@ -219,38 +213,7 @@ void setupEspNow() {
     memcpy(peerInfo.lmk, espNowLtk, 16);
     esp_now_add_peer(&peerInfo);
 }
-/*
-// --- LOGICA SENSORI (MANTENUTA ESATTAMENTE) ---
-long readUltrasonicDistance() {
-  digitalWrite(ULTRASONIC_TRIG_PIN, LOW); delayMicroseconds(2);
-  digitalWrite(ULTRASONIC_TRIG_PIN, HIGH); delayMicroseconds(10);
-  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
-  unsigned long duration = pulseIn(ULTRASONIC_ECHO_PIN, HIGH, 30000UL); 
-  if (duration == 0) return -1;
-  return duration * 0.034 / 2;
-}
 
-bool isObstacleDetected() {
-    long readings[NUM_SAMPLES];
-    int validCount = 0;
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-        long d = readUltrasonicDistance();
-        if (d > 0) readings[validCount++] = d;
-    }
-    if (validCount == 0) return false;
-    long sum = 0, minVal = readings[0], maxVal = readings[0];
-    for (int i = 0; i < validCount; i++) {
-        sum += readings[i];
-        if (readings[i] < minVal) minVal = readings[i];
-        if (readings[i] > maxVal) maxVal = readings[i];
-    }
-    long avg = sum / validCount;
-
-    if ((maxVal - minVal) > MAX_VARIATION) return false;
-
-    return (avg <= DETECTION_THRESHOLD);
-}
-*/
 // --- LOGICA FINE CORSA ---
 void limitSwitch() {
     switch (gate.gateActual) {
@@ -259,14 +222,14 @@ void limitSwitch() {
             if (digitalRead(LIMIT_SWITCH_CLOSE_PIN) == HIGH) {
                 if (!limitSwitchTimer.isSet()) limitSwitchTimer.set(DEBOUNCE_DELAY_MS); 
                 if (limitSwitchTimer.check()) {
-                    if (gateOpen) {
+                    if (!gateOpen) {
                         digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, LOW);
                         gate.gateActual = GATE_ACTUAL_OPENING; 
                         gate.isMoving = true;
-                        gateOpen = false;
+                        gateOpen = true;
                         controlSensor = true;
                         gateMovementTimeoutTimer.set(GATE_MOVEMENT_TIMEOUT_MS);
-                        sendStatusUpdate();
+                        sendStatus = true;
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet(); 
@@ -283,7 +246,7 @@ void limitSwitch() {
                         gate.isMoving = false; 
                         gateMovementTimeoutTimer.resetSet();
                         limitControlSensorTimer.resetSet();
-                        sendStatusUpdate();
+                        sendStatus = true;
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet(); 
@@ -299,7 +262,7 @@ void limitSwitch() {
                         gate.isMoving = true;
                         gateClose = false;
                         gateMovementTimeoutTimer.set(GATE_MOVEMENT_TIMEOUT_MS);
-                        sendStatusUpdate();
+                        sendStatus = true;
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet(); 
@@ -313,6 +276,7 @@ void limitSwitch() {
                         digitalWrite(LED_LIMIT_SWITCH_OPEN_PIN, HIGH); 
                         gate.gateActual = GATE_ACTUAL_OPEN; 
                         gate.isMoving = false;
+                        gateOpen = false;
                         gateMovementTimeoutTimer.resetSet();
                         
                         // LOGICA SENSORE DI CHIUSURA (originale)
@@ -322,7 +286,7 @@ void limitSwitch() {
                                 autoCloseTimer.set(AUTO_CLOSE_DELAY_MS);
                             }
                         } else autoCloseTimer.set(AUTO_CLOSE_DELAY_MS);
-                        sendStatusUpdate();
+                        sendStatus = true;
                     }
                 }
             } else if (limitSwitchTimer.isSet()) limitSwitchTimer.resetSet();
@@ -330,25 +294,6 @@ void limitSwitch() {
         default:
             break;
     }
-}
-
-void telecomando() {
-    if (digitalRead(TELECOMANDO_PIN) == LOW) {
-        if (!ControlTelecomandoTimer.isSet()) ControlTelecomandoTimer.set(TELECOMANDO_DELAY_MS); 
-        if (ControlTelecomandoTimer.check()) {
-            if  (!autoCloseTimer.isSet() && gate.gateActual == GATE_ACTUAL_OPEN && !gateClose) handleInternalAction(ACTION_CLOSE);
-            else if (!gateOpen)  handleInternalAction(ACTION_OPEN);
-        }
-    } else if (ControlTelecomandoTimer.isSet()) ControlTelecomandoTimer.resetSet(); 
-}
-
-bool isObstacleDetected () {
-    if (digitalRead(ULTRASONIC_PIN) == LOW) {
-        if (checkSensorTimer.check()) {
-            return true;
-        }
-    } else checkSensorTimer.set(INPUT_SENSOR_DELAY_MS);
-    return false;
 }
 
 
@@ -365,7 +310,6 @@ void setup() {
     pinMode(ULTRASONIC_PIN, INPUT_PULLUP);  
     pinMode(LIMIT_SWITCH_CLOSE_PIN, INPUT_PULLUP);
     pinMode(LIMIT_SWITCH_OPEN_PIN, INPUT_PULLUP);
-    pinMode(TELECOMANDO_PIN, INPUT_PULLUP);
 
     delay(10);
 
@@ -385,33 +329,38 @@ void loop() {
     if (!checkInputTimer.isSet()) checkInputTimer.set(INPUT_DELAY_MS);
     if (checkInputTimer.check()) {    
         limitSwitch();
-        telecomando();
     }
 
     // LETTURA SENSORE E LOGICA OSTACOLO
     if (gate.isMoving || gate.gateActual == GATE_ACTUAL_OPEN) {
-        if (isObstacleDetected()) {
-            if (!obstacleDetected) {
-                obstacleDetected = true; 
-                limitSensorTimer.set(CONTROL_DELAY_MS);
-                digitalWrite(LED_SENSOR_PIN, HIGH);
-                if (controlSensor) {
-                    if (!controlSensorState)  controlSensorState = true; 
-                } else {
-                    // --- ARRESTO OSTACOLO: ORA USA LA LOGICA INTERNA ---
-                    handleInternalAction(ACTION_OPEN);
-                    
+        if (digitalRead(ULTRASONIC_PIN) == HIGH) {
+            if (!checkSensorTimer.isSet()) checkSensorTimer.set(CONTROL_DELAY_MS); 
+            if (checkSensorTimer.check()) {
+                if (!obstacleDetected) {
+                    #ifdef DEBUG
+                        Serial.println("Rilevato ostacolo"); 
+                    #endif
+                    digitalWrite(LED_SENSOR_PIN, HIGH);
+                    obstacleDetected = true;
+                    limitSensorTimer.set(CONTROL_DELAY_MS);
+
+                    if (controlSensor) {
+                        if (!controlSensorState)  controlSensorState = true; 
+                    } else {
+                        // --- ARRESTO OSTACOLO: ORA USA LA LOGICA INTERNA ---
+                        if (gate.gateActual == GATE_ACTUAL_CLOSING) handleInternalAction(ACTION_OPEN);    
+                    }
+
+                    if (autoCloseTimer.isSet())  autoCloseTimer.set(AUTO_CLOSE_DELAY_MS);
                 }
-            } 
-            else if (autoCloseTimer.isSet()) { 
-                autoCloseTimer.set(AUTO_CLOSE_DELAY_MS); 
             }
-        } else if (!limitSensorTimer.isSet())   obstacleDetected = false;
+        } else checkSensorTimer.set(INPUT_SENSOR_DELAY_MS);
     }
 
     // --- TIMER DI RIMOZIONE OSTACOLO E RIATTIVAZIONE SENSORE ---
     if (limitSensorTimer.isSet() && limitSensorTimer.check()) {
         if (obstacleDetected) {
+            obstacleDetected =  false;
             if (gate.gateActual != GATE_ACTUAL_OPENING && gate.gateActual != GATE_ACTUAL_OPEN) { 
                 digitalWrite(LED_SENSOR_PIN, LOW); 
             }
@@ -423,7 +372,7 @@ void loop() {
             }
         }
     } 
-
+   
     // --- AZIONI TEMPORIZZATE ---
 
     // Autochiusura
@@ -439,5 +388,10 @@ void loop() {
     if (statusReportTimer.isSet() && statusReportTimer.check()) {
         sendStatusUpdate();
         statusReportTimer.set(HEARTBEAT_INTERVAL_SHORT_MS);
+    }
+
+    if (sendStatus) {
+        sendStatus = false;
+        sendStatusUpdate();
     }
 }
