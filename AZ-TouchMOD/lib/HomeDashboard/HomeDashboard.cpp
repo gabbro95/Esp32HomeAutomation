@@ -2,8 +2,7 @@
 
 const int BUZZER_PIN = 32; 
 const int RIPETIZIONI = 5; 
-const unsigned long INTERVALLO_CORTO = 100;
-const unsigned long INTERVALLO_LUNGO = 900;
+const unsigned long INTERVALLO = 500;
 
 // Istanza globale del display TFT 
 TFT_eSPI tft = TFT_eSPI();
@@ -23,24 +22,24 @@ static uint16_t calData[5] = {481, 3030, 543, 3128, 4};
 // FUNZIONE PER SUONARE LA MELODIA DING-DONG
 // ==========================================================
 void HomeDashboard::updateBuzzer() {
-    if (!isPlaying) {
-        // Se la melodia non è in riproduzione, controlla se è da attivare
-        return;
-    }
-    if (counter < RIPETIZIONI) {
-        if (buzzerTimer.isExpired()) {
+    if (play) {
+        if (!isPlaying && counter == 0) {
+            isPlaying = true;
             int state = digitalRead(BUZZER_PIN);
             digitalWrite(BUZZER_PIN, !state);
-            if (!state) {
-                counter++;
-                buzzerTimer.setInterval(INTERVALLO_LUNGO);
-            } else buzzerTimer.setInterval(INTERVALLO_CORTO);
+            counter++;
+            buzzerTimer.setInterval(INTERVALLO);
+        } else if (isPlaying && buzzerTimer.checkAndReset() && counter < RIPETIZIONI) {
+            int state = digitalRead(BUZZER_PIN);
+            digitalWrite(BUZZER_PIN, !state);
+            if (!state)  counter++;
         }
-    } else if (isPlaying) {
+    } else {
+        // Se la melodia non è in riproduzione, controlla se è da attivare
         counter = 0;
         isPlaying = false;
+        return;
     }
-    return;
 }
 
 // --- Callback statici ---
@@ -95,7 +94,7 @@ HomeDashboard::HomeDashboard() :
     accensioneDisplay(500),
     controlTouch(10),
     linkDisplayTimer(5),
-    buzzerTimer(INTERVALLO_CORTO)
+    buzzerTimer(INTERVALLO)
 {
     dashboardInstance = this;
 }
@@ -280,6 +279,11 @@ void HomeDashboard::processSingleMessage(const EspNowMessage& msg) {
         }
         linkWatchdog.reset();
         return;
+    } else if (msg.command == CMD_CALL) {
+        if (msg.stateCall) 
+        smallGate.isCall = msg.stateCall;
+        updateCallSmallGateUI();
+        return;
     }
 }
 
@@ -412,8 +416,6 @@ void HomeDashboard::updateCallSmallGateUI() {
         lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0x00AA00), 0);
         lv_label_set_text(label_call_small_gate, "Chiamata in corso");
         play = true;
-        isPlaying = true;
-        buzzerTimer.setInterval(INTERVALLO_CORTO);
     } else {
         lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0xAA0000), 0);
         lv_label_set_text(label_call_small_gate, "Nessuna chiamata");
