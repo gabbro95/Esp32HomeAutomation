@@ -13,10 +13,25 @@ void RemoteDevice::handleMessage(const EspNowMessage& msg) {
         return;
     }
 
-    if (finalDest == DEV_GARAGE || finalDest == DEV_GATE || finalDest == DEV_SMALL_GATE) {
+    if (finalDest == DEV_CENTRAL_MASTER) {
+        if (msg.command == CMD_TOGGLE)  {
+            EspNowMessage pending{};
+            if (digitalRead(RELAY_PIN)) {
+                digitalWrite(RELAY_PIN, LOW);
+                pending.stateOn = true;
+            } else {
+                digitalWrite(RELAY_PIN, HIGH);
+                pending.stateOn = false;
+            }
+            pending.deviceId = finalDest;
+            pending.command = CMD_STATUS;
+            peerManager->mirrorStatusToUIs(pending, nullptr);
+            return;
+        }
+    } else {
         PeerDevice* target;
-        if (msg.deviceId == DEV_GARAGE)   target = peerManager->findPeerByDevice(static_cast<DeviceType>(DEV_CENTRAL));
-         else   target = peerManager->findPeerByDevice(static_cast<DeviceType>(finalDest));
+        if (finalDest == DEV_GARAGE) target = peerManager->findPeerByDevice(static_cast<DeviceType>(DEV_CENTRAL));
+        else target = peerManager->findPeerByDevice(static_cast<DeviceType>(finalDest));
         
         if (!target) {
             Serial.println("[rx] remote -> target non trovato");
@@ -31,20 +46,5 @@ void RemoteDevice::handleMessage(const EspNowMessage& msg) {
         toggle.sequenceNum = peerManager->getNextSequenceNum();
         peerManager->sendOrQueue(target->getMacAddress(), toggle);
         return;
-    } else if (finalDest == DEV_CENTRAL_MASTER) {
-        if (msg.command == CMD_TOGGLE)  {
-            EspNowMessage pending{};
-            if (digitalRead(RELAY_PIN)) {
-                digitalWrite(RELAY_PIN, LOW);
-                pending.stateOn = true;
-            } else {
-                digitalWrite(RELAY_PIN, HIGH);
-                pending.stateOn = false;
-            }
-            pending.deviceId = finalDest;
-            pending.command = CMD_STATUS;
-            peerManager->mirrorStatusToUIs(pending, this->getMacAddress());
-            return;
-        }
     }
 }

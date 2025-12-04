@@ -1,9 +1,9 @@
 #include "PeerManager.h"
 #include "PeerDevice.h"
 #include "MyCommon.h"
-#include "GarageDevice.h"
 #include <Arduino.h>
 #include <esp_now.h>
+#include "GarageDevice.h"
 
 PeerManager& PeerManager::getInstance() {
     static PeerManager instance;
@@ -75,7 +75,7 @@ void PeerManager::processRetryQueue() {
 
 void PeerManager::mirrorStatusToUIs(const EspNowMessage& msg, const uint8_t* excludeMac) {
     for (PeerDevice* p : peers) {
-        if (p->getDeviceId() == DEV_REMOTE || p->getDeviceId() == DEV_DISPLAY_RUSTICO || p->getDeviceId() == DEV_CENTRAL_MASTER) {
+        if (p->getDeviceId() == DEV_DISPLAY_RUSTICO && p->getDeviceId() == DEV_CENTRAL_MASTER) {
             if (excludeMac && macEqual(p->getMacAddress(), excludeMac)) continue;
             EspNowMessage copy = msg;
             copy.sequenceNum = getNextSequenceNum();
@@ -86,6 +86,7 @@ void PeerManager::mirrorStatusToUIs(const EspNowMessage& msg, const uint8_t* exc
 
 void PeerManager::sendFullStateToUI(const uint8_t* uiMac) {
     // Implementazione per inviare lo stato completo
+    
     PeerDevice* garage = findPeerByDevice(DEV_GARAGE);
     if (garage) {
         GarageDevice* gd = static_cast<GarageDevice*>(garage);

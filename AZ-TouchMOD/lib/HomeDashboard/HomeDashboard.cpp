@@ -1,5 +1,7 @@
 #include "HomeDashboard.h"
 
+#define DEBUG
+
 const int BUZZER_PIN = 32; 
 const int RIPETIZIONI = 5; 
 const unsigned long INTERVALLO = 500;

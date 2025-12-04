@@ -6,9 +6,8 @@
 #include "MySecrets.h"
 #include "MyTimer.h"
 #include "PeerManager.h"
-#include "CentralMasterDevice.h"
 #include "GarageDevice.h"
-#include "RemoteDevice.h"
+#include "CentralMasterDevice.h"
 #include "DisplayRusticoDevice.h"
 
 static const char* DEVICE_NAME = "Central";
@@ -75,15 +74,11 @@ void setupEspNow() {
     // Aggiungi la centrale master
     memcpy(peerInfo.peer_addr, macCentralMaster, 6);
     esp_now_add_peer(&peerInfo);
-    
+        
     // Aggiungi il garage
     memcpy(peerInfo.peer_addr, macGarage, 6);
     esp_now_add_peer(&peerInfo);
     
-    // Aggiungi il telecomando
-    memcpy(peerInfo.peer_addr, macRemote, 6);
-    esp_now_add_peer(&peerInfo);
-
     // Aggiungi il display
     memcpy(peerInfo.peer_addr, macDisplayRustico, 6);
     esp_now_add_peer(&peerInfo);
@@ -98,7 +93,6 @@ void setup() {
 
     peerManager.addPeer(new CentralMasterDevice(macCentralMaster, &peerManager));
     peerManager.addPeer(new GarageDevice(macGarage, &peerManager));
-    peerManager.addPeer(new RemoteDevice(macRemote, &peerManager));
     peerManager.addPeer(new DisplayRusticoDevice(macDisplayRustico, &peerManager));
 
     Serial.println("[boot] Centrale pronta");

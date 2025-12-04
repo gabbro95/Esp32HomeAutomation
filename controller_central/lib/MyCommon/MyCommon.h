@@ -34,7 +34,8 @@ typedef enum : uint8_t {
 	CMD_CALL,                 // Comando di Chiamata Cancelletto
 	CMD_STATUS,               // Richiesta di stato
 	CMD_PING,                 // Heartbeat / Richiesta link
-	CMD_PONG                  // Risposta Heartbeat
+	CMD_PONG,                  // Risposta Heartbeat
+    CMD_ACK                   // Conferma di ricezione comando
 } CommandType;
 
 // --- Stato Attuale del Cancello (GateActualState) ---

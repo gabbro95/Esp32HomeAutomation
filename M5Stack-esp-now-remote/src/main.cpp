@@ -6,9 +6,10 @@
 #include "MySecrets.h"
 #include "MyTimer.h"  
 
-#define DEBUG
+//#define DEBUG
 
 MyTimer heartbeatTimer(HEARTBEAT_INTERVAL_MS); 
+MyTimer spegnimentoAutomatico(30000); 
 
 const DeviceType THIS_DEVICE_ID = DEV_REMOTE;
 uint32_t remoteSeqNum = 0;
@@ -35,16 +36,16 @@ void sendCommand(CommandType command) {
     else if (msg.deviceId == DEV_GARAGE) msg.value = (uint16_t)garage.isOn;
     msg.sequenceNum = ++remoteSeqNum;
 
-#ifdef DEBUG
-    Serial.printf("[REMOTE] TX: dev=%d cmd=%d val=%d seq=%lu\n",
-                  msg.deviceId, msg.command, msg.value, (unsigned long)msg.sequenceNum);
-#endif
+    #ifdef DEBUG
+        Serial.printf("[REMOTE] TX: dev=%d cmd=%d val=%d seq=%lu\n",
+                    msg.deviceId, msg.command, msg.value, (unsigned long)msg.sequenceNum);
+    #endif
 
-    esp_now_send(macCentral, (uint8_t*)&msg, sizeof(msg));
+    esp_now_send(macCentralMaster, (uint8_t*)&msg, sizeof(msg));
 }
 
 void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
-    if (!macEqual(mac, macCentral)) {
+    if (!macEqual(mac, macCentralMaster)) {
         #ifdef DEBUG
                 Serial.println("[REMOTE] RX: Ignorato (non centrale)");
         #endif
@@ -179,8 +180,24 @@ void drawUI() {
     M5.Lcd.printf("Batt: %.2fV", batt);
 }
 
+/*
+ * Funzione per spegnere completamente l'M5Stack
+ * Utilizza il chip di gestione dell'alimentazione (PMU).
+ * L'M5Stack potrà essere riacceso solo premendo il pulsante
+ * di accensione/reset.
+ */
+void spegniM5() {
+  Serial.println("Spegnimento in corso...");
+  delay(100); // Piccolo ritardo per permettere l'invio del messaggio seriale
+  
+  // Questo è il comando che dice al PMU di spegnersi
+  M5.Power.powerOff();
+}
+
+
 void setup() {
-    M5.begin();
+    auto cfg = M5.config();
+    M5.begin(cfg);
     Serial.begin(115200);
 
     WiFi.mode(WIFI_STA);
@@ -195,7 +212,7 @@ void setup() {
     esp_now_register_send_cb(onDataSent);
 
     esp_now_peer_info_t peerInfo = {};
-    memcpy(peerInfo.peer_addr, macCentral, 6);
+    memcpy(peerInfo.peer_addr, macCentralMaster, 6);
     peerInfo.channel = WIFI_CHANNEL;
     peerInfo.encrypt = true;
     memcpy(peerInfo.lmk, espNowLtk, 16);
@@ -209,6 +226,7 @@ void setup() {
 
     // start timers
     heartbeatTimer.reset();
+    spegnimentoAutomatico.reset();
 }
 
 void loop() {
@@ -240,13 +258,19 @@ void loop() {
         }
         drawUI();
         sendCommand(CMD_PING);
+        spegnimentoAutomatico.reset();
     }
 
     if (M5.BtnB.wasPressed()) {
         sendCommand(CMD_TOGGLE);
+        spegnimentoAutomatico.reset();
     }
 
     if (M5.BtnC.wasPressed()) {
         sendCommand(CMD_OPEN);
+        spegnimentoAutomatico.reset();
     }
+
+    // Chiama la funzione di spegnimento
+    if (spegnimentoAutomatico.isExpired()) spegniM5(); 
 }

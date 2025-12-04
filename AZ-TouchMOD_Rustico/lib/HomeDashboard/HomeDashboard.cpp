@@ -1,5 +1,7 @@
 #include "HomeDashboard.h"
 
+#define DEBUG
+
 const int BUZZER_PIN = 21; 
 
 // ==========================================================
@@ -327,6 +329,12 @@ void HomeDashboard::processSingleMessage(const EspNowMessage& msg) {
             updateLigthExternUI();
         }
         linkWatchdog.reset();
+        return;
+    } else if (msg.command == CMD_CALL) {
+        if (msg.stateCall) 
+        smallGate.isCall = msg.stateCall;
+        updateCallSmallGateUI();
+        return;
     }
 }
 

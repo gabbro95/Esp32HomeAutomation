@@ -11,15 +11,14 @@ void CentralMasterDevice::handleMessage(const EspNowMessage& msg) {
     DeviceType finalDest = msg.deviceId; // Destinazione finale (es. DEV_GARAGE)
 
     PeerDevice* device;
-    if (finalDest == DEV_CENTRAL_MASTER && msg.command == CMD_STATUS) {
-        peerManager->mirrorStatusToUIs(msg ,this->getMacAddress());
-    } else if (msg.command == CMD_STATUS) {
+    if (msg.command == CMD_STATUS) {
         device = peerManager->findPeerByDevice(DEV_CENTRAL_MASTER);
-        peerManager->sendFullStateToUI(device->getMacAddress());
+        peerManager->mirrorStatusToUIs(msg, getMacAddress());
     } else {
         device = peerManager->findPeerByDevice(finalDest);
         peerManager->sendOrQueue(device->getMacAddress(), msg);
     } 
+    
     return;
 }
 

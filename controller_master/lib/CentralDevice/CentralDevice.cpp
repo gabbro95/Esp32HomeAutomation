@@ -10,13 +10,7 @@ CentralDevice::CentralDevice(const uint8_t* mac, PeerManager* manager)
 void CentralDevice::handleMessage(const EspNowMessage& msg) {   
     DeviceType finalDest = msg.deviceId; // Destinazione finale (es. DEV_GARAGE)
 
-    if (msg.command == CMD_STATUS) {
-        if (finalDest != DEV_GARAGE) peerManager->sendFullStateToUI(this->getMacAddress());
-        else {
-            PeerDevice* device = peerManager->findPeerByDevice(DEV_DISPLAY_CASA);
-            peerManager->sendOrQueue(device->getMacAddress(), msg);
-        }
-    } else if (finalDest == DEV_CENTRAL_MASTER && msg.command == CMD_TOGGLE)  {
+    if (finalDest == DEV_CENTRAL_MASTER && msg.command == CMD_TOGGLE)  {
         EspNowMessage pending{};
 
         int state = digitalRead(RELAY_PIN);
@@ -28,8 +22,16 @@ void CentralDevice::handleMessage(const EspNowMessage& msg) {
         peerManager->mirrorStatusToUIs(pending, nullptr);
         return;
     } else {
-        PeerDevice* device = peerManager->findPeerByDevice(finalDest);
-        peerManager->sendOrQueue(device->getMacAddress(), msg); 
+        if (msg.command == CMD_STATUS && finalDest == DEV_GARAGE) {
+            peerManager->mirrorStatusToUIs(msg, this->getMacAddress());
+        } else {
+            if (msg.command == CMD_STATUS) {
+                peerManager->mirrorStatusToUIs(msg, this->getMacAddress());
+            } else {
+                PeerDevice* device = peerManager->findPeerByDevice(finalDest);
+                peerManager->sendOrQueue(device->getMacAddress(), msg); 
+            }
+        }
     }
     return;
 }
