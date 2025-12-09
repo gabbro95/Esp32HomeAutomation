@@ -6,10 +6,11 @@
 #include "MySecrets.h"
 #include "MyTimer.h"
 #include "PeerManager.h"
-#include "CentralDevice.h"
+#include "GarageDevice.h"
 #include "GateDevice.h"
 #include "SmallGateDevice.h"
 #include "RemoteDevice.h"
+#include "DisplayCasaDevice.h"
 #include "DisplayRusticoDevice.h"
 
 static const char* DEVICE_NAME = "Master";
@@ -76,11 +77,11 @@ void setupEspNow() {
     peerInfo.channel = WIFI_CHANNEL;
     peerInfo.encrypt = true;
     memcpy(peerInfo.lmk, espNowLtk, 16);
-
-    // Aggiungi la centrale master
-    memcpy(peerInfo.peer_addr, macCentral, 6);
+      
+    // Aggiungi il garage
+    memcpy(peerInfo.peer_addr, macGarage, 6);
     esp_now_add_peer(&peerInfo);
-    
+
     // Aggiungi il cancello
     memcpy(peerInfo.peer_addr, macGate, 6);
     esp_now_add_peer(&peerInfo);
@@ -93,8 +94,12 @@ void setupEspNow() {
     memcpy(peerInfo.peer_addr, macRemote, 6);
     esp_now_add_peer(&peerInfo);
 
-    // Aggiungi il display
+    // Aggiungi il display casa
     memcpy(peerInfo.peer_addr, macDisplayCasa, 6);
+    esp_now_add_peer(&peerInfo);
+
+    // Aggiungi il display rustico
+    memcpy(peerInfo.peer_addr, macDisplayRustico, 6);
     esp_now_add_peer(&peerInfo);
 }
 
@@ -108,11 +113,12 @@ void setup() {
 
     setupEspNow();
 
-    peerManager.addPeer(new CentralDevice(macCentral, &peerManager));
+    peerManager.addPeer(new GarageDevice(macGarage, &peerManager));
     peerManager.addPeer(new GateDevice(macGate, &peerManager));
     peerManager.addPeer(new SmallGateDevice(macSmallGate, &peerManager));
     peerManager.addPeer(new RemoteDevice(macRemote, &peerManager));
-    peerManager.addPeer(new DisplayRusticoDevice(macDisplayCasa, &peerManager));
+    peerManager.addPeer(new DisplayCasaDevice(macDisplayCasa, &peerManager));
+    peerManager.addPeer(new DisplayRusticoDevice(macDisplayRustico, &peerManager));
 
     Serial.println("[boot] Centrale pronta");
 }

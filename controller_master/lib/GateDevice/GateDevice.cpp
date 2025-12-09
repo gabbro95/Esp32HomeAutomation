@@ -48,13 +48,12 @@ void GateDevice::evaluateAutomationRules_GateChanged(GateActualState oldState, G
         if (newLightStateOn) {
             digitalWrite(RELAY_PIN, newRelayState);
 
-            PeerDevice* central = peerManager->findPeerByDevice(DEV_CENTRAL);
-
+            PeerDevice* garage = peerManager->findPeerByDevice(DEV_GARAGE);
             EspNowMessage cmdToTarget{};
             cmdToTarget.deviceId = DEV_GARAGE;
             cmdToTarget.command = CMD_TOGGLE;
             cmdToTarget.sequenceNum = peerManager->getNextSequenceNum();
-            peerManager->sendOrQueue(central->getMacAddress(), cmdToTarget);
+            peerManager->sendOrQueue(garage->getMacAddress(), cmdToTarget);
             
             // C) Invia lo stato PENDING (value=2) a TUTTE le UI per feedback immediato
             EspNowMessage pendingStatus{}; // Usa il messaggio inviato come base
@@ -85,13 +84,12 @@ void GateDevice::loop() {
         if (!newLightStateOn) {
             digitalWrite(RELAY_PIN, newRelayState); // Spegne la luce.
             // ... e invia tutti i messaggi di stato, come facevi prima
-            PeerDevice* central = peerManager->findPeerByDevice(DEV_CENTRAL);
-            
+            PeerDevice* garage = peerManager->findPeerByDevice(DEV_GARAGE);
             EspNowMessage cmdToTarget{};
             cmdToTarget.deviceId = DEV_GARAGE;
             cmdToTarget.command = CMD_TOGGLE;
             cmdToTarget.sequenceNum = peerManager->getNextSequenceNum();
-            peerManager->sendOrQueue(central->getMacAddress(), cmdToTarget);
+            peerManager->sendOrQueue(garage->getMacAddress(), cmdToTarget);
             
             EspNowMessage pendingStatus{}; 
             pendingStatus.deviceId = DEV_CENTRAL_MASTER;

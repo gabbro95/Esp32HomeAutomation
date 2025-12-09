@@ -1,6 +1,7 @@
 #include "PeerManager.h"
 #include "PeerDevice.h"
 #include "MyCommon.h"
+#include "GarageDevice.h"
 #include "GateDevice.h"
 #include "SmallGateDevice.h"
 #include <Arduino.h>
@@ -76,7 +77,7 @@ void PeerManager::processRetryQueue() {
 
 void PeerManager::mirrorStatusToUIs(const EspNowMessage& msg, const uint8_t* excludeMac) {
     for (PeerDevice* p : peers) {
-        if (p->getDeviceId() == DEV_REMOTE || p->getDeviceId() == DEV_DISPLAY_CASA || p->getDeviceId() == DEV_CENTRAL) {
+        if (p->getDeviceId() == DEV_REMOTE || p->getDeviceId() == DEV_DISPLAY_CASA || p->getDeviceId() == DEV_DISPLAY_RUSTICO) {
             if (excludeMac && macEqual(p->getMacAddress(), excludeMac)) continue;
             EspNowMessage copy = msg;
             copy.sequenceNum = getNextSequenceNum();
@@ -87,6 +88,17 @@ void PeerManager::mirrorStatusToUIs(const EspNowMessage& msg, const uint8_t* exc
 
 void PeerManager::sendFullStateToUI(const uint8_t* uiMac) {
     // Implementazione per inviare lo stato completo
+    PeerDevice* garage = findPeerByDevice(DEV_GARAGE);
+    if (garage) {
+        GarageDevice* gd = static_cast<GarageDevice*>(garage);
+        EspNowMessage msg{};
+        msg.deviceId = gd->getDeviceId();
+        msg.command = CMD_STATUS;
+        msg.stateOn = gd->getState().isOn;
+        msg.sequenceNum = getNextSequenceNum();
+        sendOrQueue(uiMac, msg);
+    }
+
     PeerDevice* gate = findPeerByDevice(DEV_GATE);
     if (gate) {
         GateDevice* gd = static_cast<GateDevice*>(gate);
@@ -107,10 +119,16 @@ void PeerManager::sendFullStateToUI(const uint8_t* uiMac) {
         msg.command = CMD_STATUS;
         msg.smallGateActual = gd->getState().smallGateActual;
         msg.stateOn = gd->getState().isOn;
-        msg.stateCall = gd->getState().isCall;
         msg.sequenceNum = getNextSequenceNum();
         sendOrQueue(uiMac, msg);
     }
+
+    EspNowMessage msg{};
+    msg.deviceId = DEV_CENTRAL;
+    msg.command = CMD_STATUS;
+    msg.stateOn = (digitalRead(RELAY_PIN) == LOW);
+    msg.sequenceNum = getNextSequenceNum();
+    sendOrQueue(uiMac, msg);
 }
 
 void PeerManager::sendHeartbeat() {
@@ -192,6 +210,17 @@ MsgPrio PeerManager::classifyPrio(const EspNowMessage& msg) {
 bool sendEspNowMessage(const uint8_t* mac, const EspNowMessage& msg) {
     esp_err_t result = esp_now_send(mac, (const uint8_t*)&msg, sizeof(msg));
     return result == ESP_OK;
+}
+
+// Helper privato per inviare l'ACK
+void PeerManager::sendAck(const uint8_t* macDest) {
+    EspNowMessage ackMsg = {};
+    ackMsg.deviceId = DEV_CENTRAL_MASTER; // Chi risponde (la centrale)
+    ackMsg.command = CMD_ACK;             // Il comando di conferma
+    ackMsg.sequenceNum = 0; 
+    
+    // Usa sendEspNowMessage globale (definito in PeerManager.h)
+    sendEspNowMessage(macDest, ackMsg);
 }
 
 void PeerManager::setState(bool setstate) {

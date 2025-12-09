@@ -271,9 +271,7 @@ void HomeDashboard::processSingleMessage(const EspNowMessage& msg) {
         } else if (msg.deviceId == DEV_SMALL_GATE) {
             smallGate.smallGateActual = msg.smallGateActual;
             smallGate.isOn = msg.stateOn;
-            smallGate.isCall = msg.stateCall;
             updateSmallGateUI();
-            updateCallSmallGateUI();
             updateLigthSmallGateUI();
         } else if (msg.deviceId == DEV_CENTRAL_MASTER) {
             lightExtern.isOn = msg.stateOn; 
@@ -282,8 +280,7 @@ void HomeDashboard::processSingleMessage(const EspNowMessage& msg) {
         linkWatchdog.reset();
         return;
     } else if (msg.command == CMD_CALL) {
-        if (msg.stateCall) 
-        smallGate.isCall = msg.stateCall;
+        isCall = true;
         updateCallSmallGateUI();
         return;
     }
@@ -293,6 +290,10 @@ void HomeDashboard::processButtonEvent(DeviceType target, CommandType cmd, const
     #ifndef DEBUG
     Serial.println(debugMsg);
     #endif
+    if (cmd == CMD_CALL) {
+        isCall = false;
+        updateCallSmallGateUI();
+    }
     sendMessage(target, cmd, 0);
 }
 
@@ -414,7 +415,7 @@ void HomeDashboard::updateSmallGateUI() {
 }
 
 void HomeDashboard::updateCallSmallGateUI() {
-    if (smallGate.isCall) {
+    if (isCall) {
         lv_obj_set_style_bg_color(btn_call_small_gate, lv_color_hex(0x00AA00), 0);
         lv_label_set_text(label_call_small_gate, "Chiamata in corso");
         play = true;

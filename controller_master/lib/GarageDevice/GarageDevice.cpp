@@ -13,6 +13,7 @@ void GarageDevice::handleMessage(const EspNowMessage& msg) {
         state.isOn = msg.stateOn;
         state.pending = false;
         peerManager->mirrorStatusToUIs(msg, getMacAddress());
+        return;
     }
 }
 

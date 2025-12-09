@@ -79,6 +79,7 @@ private:
     int counter = 0; // Indice della nota corrente da suonare
     bool isPlaying = false; // Stato: la melodia è in riproduzione?
     bool play = false; // Stato: la melodia
+    bool isCall = false;    // Stato: chiamata
 
     // Timer LVGL
     esp_timer_handle_t lvgl_tick_timer;

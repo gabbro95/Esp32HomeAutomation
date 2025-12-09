@@ -9,7 +9,7 @@ void RemoteDevice::handleMessage(const EspNowMessage& msg) {
     DeviceType finalDest = msg.deviceId; // Destinazione finale (es. DEV_GARAGE)
 
     if (msg.command == CMD_PING) {
-        peerManager->sendFullStateToUI(getMacAddress());
+        peerManager->sendFullStateToUI(this->getMacAddress());
         return;
     }
 
@@ -29,9 +29,7 @@ void RemoteDevice::handleMessage(const EspNowMessage& msg) {
             return;
         }
     } else {
-        PeerDevice* target;
-        if (finalDest == DEV_GARAGE) target = peerManager->findPeerByDevice(static_cast<DeviceType>(DEV_CENTRAL));
-        else target = peerManager->findPeerByDevice(static_cast<DeviceType>(finalDest));
+        PeerDevice* target = peerManager->findPeerByDevice(static_cast<DeviceType>(finalDest));
         
         if (!target) {
             Serial.println("[rx] remote -> target non trovato");

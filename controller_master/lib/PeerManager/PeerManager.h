@@ -3,6 +3,7 @@
 #include <vector>
 
 class PeerDevice;
+class GarageDevice;
 class GateDevice;
 class SmallGateDevice;
 
@@ -39,6 +40,7 @@ public:
     void setState(bool setstate);
 
     void loop();
+    void sendAck(const uint8_t* macDest);
 
 private:
     PeerManager() = default;

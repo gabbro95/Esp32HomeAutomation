@@ -33,11 +33,11 @@ void sendStatus() {
     msg.deviceId, msg.command, msg.value, (unsigned long)msg.sequenceNum);
 #endif
 
-    esp_now_send(macCentral, (uint8_t*)&msg, sizeof(msg));
+    esp_now_send(macCentralMaster, (uint8_t*)&msg, sizeof(msg));
 }
 
 void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
-    if (!macEqual(mac, macCentral)) {
+    if (!macEqual(mac, macCentralMaster)) {
         #ifdef DEBUG
                 Serial.println("[GARAGE] RX: Ignorato (non centrale)");
         #endif
@@ -98,7 +98,7 @@ void setup() {
 
     // Aggiungi peer centrale
     esp_now_peer_info_t peerInfo = {};
-    memcpy(peerInfo.peer_addr, macCentral, 6);
+    memcpy(peerInfo.peer_addr, macCentralMaster, 6);
     peerInfo.channel = WIFI_CHANNEL;
     peerInfo.encrypt = true;
     memcpy(peerInfo.lmk, espNowLtk, 16);

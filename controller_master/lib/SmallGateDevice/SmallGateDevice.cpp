@@ -16,24 +16,21 @@ void SmallGateDevice::handleMessage(const EspNowMessage& msg) {
         SmallGateActualState oldState = state.smallGateActual;
         state.smallGateActual = msg.smallGateActual;
         state.isOn = msg.stateOn;
-        state.isCall = msg.stateCall;
         state.pending = false;
         peerManager->mirrorStatusToUIs(msg, getMacAddress());
         evaluateAutomationRules_SmallGateChanged(oldState, state.smallGateActual);
         return;
     }
     if (msg.command == CMD_CALL) {
-        PeerDevice* target;
-        if (msg.deviceId == DEV_DISPLAY_RUSTICO)    target = peerManager->findPeerByDevice(static_cast<DeviceType>(DEV_CENTRAL));
-        else    target = peerManager->findPeerByDevice(static_cast<DeviceType>(msg.deviceId));
+        PeerDevice* target = peerManager->findPeerByDevice(static_cast<DeviceType>(msg.deviceId));
         if (!target) {
             Serial.println("[rx] remote -> target non trovato");
             return;
         }
 
-        EspNowMessage toggle = msg;
-        toggle.sequenceNum = peerManager->getNextSequenceNum();
-        peerManager->sendOrQueue(target->getMacAddress(), toggle);
+        EspNowMessage call = msg;
+        call.sequenceNum = peerManager->getNextSequenceNum();
+        peerManager->sendOrQueue(target->getMacAddress(), call);
         return;
     }
 }
@@ -65,12 +62,12 @@ void SmallGateDevice::evaluateAutomationRules_SmallGateChanged(SmallGateActualSt
         if (newLightStateOn) {
             digitalWrite(RELAY_PIN, newRelayState);
             
-            PeerDevice* central = peerManager->findPeerByDevice(DEV_CENTRAL);
+            PeerDevice* garage = peerManager->findPeerByDevice(DEV_GARAGE);
             EspNowMessage cmdToTarget{};
             cmdToTarget.deviceId = DEV_GARAGE;
             cmdToTarget.command = CMD_TOGGLE;
             cmdToTarget.sequenceNum = peerManager->getNextSequenceNum();
-            peerManager->sendOrQueue(central->getMacAddress(), cmdToTarget);
+            peerManager->sendOrQueue(garage->getMacAddress(), cmdToTarget);
             
             PeerDevice* small_gate = peerManager->findPeerByDevice(DEV_SMALL_GATE);
             EspNowMessage cmdToTarget2 = cmdToTarget;
@@ -113,12 +110,12 @@ void SmallGateDevice::loop() {
         if (!newLightStateOn) {
             digitalWrite(RELAY_PIN, newRelayState); // Spegne la luce.
             // ... e invia tutti i messaggi di stato
-            PeerDevice* central = peerManager->findPeerByDevice(DEV_CENTRAL);
+            PeerDevice* garage = peerManager->findPeerByDevice(DEV_GARAGE);
             EspNowMessage cmdToTarget{};
             cmdToTarget.deviceId = DEV_GARAGE;
             cmdToTarget.command = CMD_TOGGLE;
             cmdToTarget.sequenceNum = peerManager->getNextSequenceNum();
-            peerManager->sendOrQueue(central->getMacAddress(), cmdToTarget);
+            peerManager->sendOrQueue(garage->getMacAddress(), cmdToTarget);
             
             PeerDevice* small_gate = peerManager->findPeerByDevice(DEV_SMALL_GATE);
             EspNowMessage cmdToTarget2 = cmdToTarget;

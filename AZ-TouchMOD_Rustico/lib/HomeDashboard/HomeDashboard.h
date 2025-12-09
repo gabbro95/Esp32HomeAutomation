@@ -76,9 +76,10 @@ private:
     MyTimer buzzerTimer;
 
     // Variabili per il controllo della melodia
-    int currentNote = 0; // Indice della nota corrente da suonare
+    int currentNote = 0;    // Indice della nota corrente da suonare
     bool isPlaying = false; // Stato: la melodia è in riproduzione?
-    bool play = false; // Stato: la melodia
+    bool play = false;      // Stato: la melodia
+    bool isCall = false;    // Stato: chiamata
 
     // Timer LVGL
     esp_timer_handle_t lvgl_tick_timer;

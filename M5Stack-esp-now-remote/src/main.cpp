@@ -8,7 +8,6 @@
 
 //#define DEBUG
 
-MyTimer heartbeatTimer(HEARTBEAT_INTERVAL_MS); 
 MyTimer spegnimentoAutomatico(30000); 
 
 const DeviceType THIS_DEVICE_ID = DEV_REMOTE;
@@ -224,17 +223,15 @@ void setup() {
 
     drawUI();
 
+    delay(100);
+    // Invia PING (Heartbeat) a DEV_CENTRAL
+    sendCommand(CMD_STATUS);
+
     // start timers
-    heartbeatTimer.reset();
     spegnimentoAutomatico.reset();
 }
 
 void loop() {
-    if (heartbeatTimer.isExpired()) {
-        // Invia PING (Heartbeat) a DEV_CENTRAL
-        sendCommand(CMD_STATUS); 
-        heartbeatTimer.reset();
-    }
     M5.update();
 
     if (M5.BtnA.wasPressed()) {

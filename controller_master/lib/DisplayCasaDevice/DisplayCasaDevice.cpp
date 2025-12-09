@@ -1,13 +1,13 @@
-#include "DisplayRusticoDevice.h"
+#include "DisplayCasaDevice.h"
 #include "PeerManager.h"
 #include <Arduino.h>
 
 // Assumo che PeerDevice abbia un costruttore che accetta il deviceType e il MAC.
-DisplayRusticoDevice::DisplayRusticoDevice(const uint8_t* mac, PeerManager* manager)
-    : PeerDevice(DEV_DISPLAY_RUSTICO, mac), peerManager(manager) {}
+DisplayCasaDevice::DisplayCasaDevice(const uint8_t* mac, PeerManager* manager)
+    : PeerDevice(DEV_DISPLAY_CASA, mac), peerManager(manager) {}
 
 
-void DisplayRusticoDevice::handleMessage(const EspNowMessage& msg) {
+void DisplayCasaDevice::handleMessage(const EspNowMessage& msg) {
     
     EspNowMessage copy = msg;
     DeviceType finalDest = msg.deviceId;
