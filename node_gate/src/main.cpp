@@ -49,7 +49,7 @@ MyTimer limitSensorTimer; const unsigned long CONTROL_DELAY_MS = 5000;
 MyTimer limitControlSensorTimer; const unsigned long CONTROL_ACTIVATE_DELAY_MS = 100;
 MyTimer statusReportTimer; const unsigned long HEARTBEAT_INTERVAL_SHORT_MS = HEARTBEAT_INTERVAL_MS / 2;
 MyTimer checkInputTimer; const unsigned long INPUT_DELAY_MS = 100;
-MyTimer checkSensorTimer;  const unsigned long INPUT_SENSOR_DELAY_MS = 50;
+MyTimer checkSensorTimer;  const unsigned long INPUT_SENSOR_DELAY_MS = 200;
 
 
 // Forward declaration
@@ -74,7 +74,7 @@ void onDataRecv(const uint8_t *mac, const uint8_t *data, int len) {
     EspNowMessage msg;
     memcpy(&msg, data, sizeof(msg));
 
-    if (!gate.isMoving && msg.deviceId == DEV_GATE) handleGateAction(msg.command);
+    handleGateAction(msg.command);
 
     #ifdef DEBUG
         Serial.printf("[GARAGE] RX: dev=%d cmd=%d val=%d seq=%lu\n",
@@ -116,6 +116,9 @@ void handleInternalAction(InternalGateAction action) {
                     digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, LOW);
                     gate.gateActual = GATE_ACTUAL_OPENING; 
                     gateMovementTimeoutTimer.set(GATE_MOVEMENT_TIMEOUT_MS);
+                } else {
+                    gate.gateActual = GATE_ACTUAL_CLOSED;
+                    gateOpen = false;
                 }
                 #ifdef DEBUG
                     Serial.println("Azione Interna: Avvio Apertura");
@@ -124,7 +127,7 @@ void handleInternalAction(InternalGateAction action) {
             break;
         case ACTION_CLOSE:
             // Avvia Chiusura
-            if (gate.gateActual != GATE_ACTUAL_CLOSING) {
+            if (gate.gateActual != GATE_ACTUAL_CLOSING && !autoCloseTimer.isSet()) {
                 // Invia impulso di chiusura
                 triggerPin(RELAY_CLOSE_PIN, LOW); 
                 gateClose = true; 
@@ -165,7 +168,7 @@ void handleGateAction(CommandType command) {
             }
             // Se fermo, riprendi con l'apertura di sicurezza
             else if (gate.gateActual == GATE_ACTUAL_STOPPED) { 
-                handleInternalAction(ACTION_CLOSE);
+                handleInternalAction(ACTION_OPEN);
             }
             // Se in movimento, ferma
             else if (gate.gateActual == GATE_ACTUAL_OPENING || gate.gateActual == GATE_ACTUAL_CLOSING) {
@@ -376,7 +379,7 @@ void loop() {
     // --- AZIONI TEMPORIZZATE ---
 
     // Autochiusura
-    if (autoCloseTimer.isSet() ) {
+    if (autoCloseTimer.isSet()) {
         if (digitalRead(LED_SENSOR_PIN))  digitalWrite(LED_SENSOR_PIN, LOW);
         if (autoCloseTimer.check())  handleInternalAction(ACTION_CLOSE); 
     }
