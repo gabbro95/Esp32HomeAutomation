@@ -109,25 +109,23 @@ void handleInternalAction(InternalGateAction action) {
     switch (action) {
         case ACTION_OPEN:
             // Avvia Apertura
-            if (gate.gateActual != GATE_ACTUAL_OPENING || gate.gateActual != GATE_ACTUAL_OPEN) {
-                // Invia impulso di apertura
-                triggerPin(RELAY_OPEN_PIN, LOW); 
-                if (gate.gateActual != GATE_ACTUAL_CLOSED)  {
-                    digitalWrite(LED_LIMIT_SWITCH_CLOSE_PIN, LOW);
-                    gate.gateActual = GATE_ACTUAL_OPENING; 
-                    gateMovementTimeoutTimer.set(GATE_MOVEMENT_TIMEOUT_MS);
-                } else {
-                    gate.gateActual = GATE_ACTUAL_CLOSED;
-                    gateOpen = false;
-                }
-                #ifdef DEBUG
-                    Serial.println("Azione Interna: Avvio Apertura");
-                #endif
-            }
+            // Invia impulso di apertura
+            triggerPin(RELAY_OPEN_PIN, LOW); 
+            if (gate.gateActual != GATE_ACTUAL_CLOSED)  {
+                gate.gateActual = GATE_ACTUAL_CLOSED;
+                gateOpen = false;
+                controlSensorState = false;
+                gate.isMoving = false; 
+                gateMovementTimeoutTimer.resetSet();
+                limitControlSensorTimer.resetSet();
+            } 
+            #ifdef DEBUG
+                Serial.println("Azione Interna: Avvio Apertura");
+            #endif
             break;
         case ACTION_CLOSE:
             // Avvia Chiusura
-            if (gate.gateActual != GATE_ACTUAL_CLOSING && !autoCloseTimer.isSet()) {
+            if (!autoCloseTimer.isSet()) {
                 // Invia impulso di chiusura
                 triggerPin(RELAY_CLOSE_PIN, LOW); 
                 gateClose = true; 
