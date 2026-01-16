@@ -5,16 +5,28 @@
 #include <string.h> // Per memcpy
 
 // --- Parametri di timing comuni ---
-const unsigned long HEARTBEAT_INTERVAL_MS = 10000;
-const unsigned long RETRY_INTERVAL_MS     = 5000;
-const uint8_t RETRY_MAX_ATTEMPTS          = 3;
-const unsigned long OFFLINE_TIMEOUT_MS    = 15000;
-const int MAX_PEERS                       = 10;
-const unsigned long OFF_INTERVAL_MS = 120000;
-const unsigned long DEBOUNCE_LDR_MS = 60000;
+
+// Macro calcolo della durata del Timer
+#define SEC_TO_MS(s) ((s) * 1000UL)
+#define MIN_TO_MS(m) ((m) * 60 * 1000UL)
+
+// Tempi Timer
+#define HEATER_DURATION_ON  	MIN_TO_MS(15)
+#define HEATER_DURATION_OFF 	MIN_TO_MS(5)
+#define WATER_PUMP_DURATION 	SEC_TO_MS(30) 
+
+const unsigned long HEARTBEAT_INTERVAL_MS = SEC_TO_MS(10);
+const unsigned long RETRY_INTERVAL_MS     = SEC_TO_MS(5);
+const uint8_t RETRY_MAX_ATTEMPTS          = SEC_TO_MS(3);
+const unsigned long OFFLINE_TIMEOUT_MS    = SEC_TO_MS(15);
+const unsigned long OFF_INTERVAL_MS = MIN_TO_MS(2);
+const unsigned long OFF_TIMER_INTERVAL_MS = MIN_TO_MS(15);
+const unsigned long DEBOUNCE_LDR_MS = MIN_TO_MS(1);
+
 const int RELAY_PIN = 15;     // PIN del relay per accendere la luce
 const int LDR_PIN = 33;     // PIN del crepuscolare per il controllo della luce
 
+const int MAX_PEERS = 10;
 // --- ID dei dispositivi (DeviceType) ---
 typedef enum : uint8_t {
     DEV_CENTRAL = 0,  

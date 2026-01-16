@@ -18,10 +18,13 @@ void RemoteDevice::handleMessage(const EspNowMessage& msg) {
             EspNowMessage pending{};
             if (digitalRead(RELAY_PIN)) {
                 digitalWrite(RELAY_PIN, LOW);
-                pending.stateOn = true;
+                peerManager->setState(true);
+                peerManager->setTimer();
+                pending.stateOn = peerManager->getState().isOn;
             } else {
                 digitalWrite(RELAY_PIN, HIGH);
-                pending.stateOn = false;
+                peerManager->setState(false);
+                pending.stateOn = peerManager->getState().isOn;
             }
             pending.deviceId = finalDest;
             pending.command = CMD_STATUS;

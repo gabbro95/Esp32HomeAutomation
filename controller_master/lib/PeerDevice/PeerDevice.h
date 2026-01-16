@@ -18,6 +18,9 @@ public:
     void updateLastSeen() { lastSeenMs = millis(); }
     unsigned long getLastSeenMs() const { return lastSeenMs; }
 
+    GarageState getGarageState() const { return stateGarage; }
+    SmallGateState getSmallGateState() const { return stateSmallGate; }
+
     virtual void loop() { /* Lascia vuoto */ }
     
 protected:
@@ -25,4 +28,8 @@ protected:
     uint8_t mac[6];
     bool online = false;
     unsigned long lastSeenMs = 0;
+
+    SmallGateState stateSmallGate;
+    GarageState stateGarage;
+    GateState stateGate;
 };

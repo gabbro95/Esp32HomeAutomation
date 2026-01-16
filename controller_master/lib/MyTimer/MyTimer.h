@@ -47,6 +47,10 @@ public:
         return millis() - last;
     }
 
+    void stop() {
+        state = false;
+    }
+
 private:
     unsigned long interval;
     unsigned long last;

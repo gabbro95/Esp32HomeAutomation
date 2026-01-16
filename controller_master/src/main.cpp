@@ -18,10 +18,6 @@ static const char* DEVICE_NAME = "Master";
 MyTimer heartbeatTimer(HEARTBEAT_INTERVAL_MS);
 MyTimer retryTimer(RETRY_INTERVAL_MS);
 MyTimer offlineScanTimer(2000);
-MyTimer debounceLDRTimer(DEBOUNCE_LDR_MS); 
-
-const int SOGLIA_LUCE_ACCENSIONE = 10; // Valore ADC: Se è PIÙ BASSO di questo, accendi la luce (è scuro).
-const int SOGLIA_LUCE_SPEGNIMENTO = 100; // Valore ADC: Se è PIÙ ALTO di questo, spegni la luce (è giorno).
 
 PeerManager& peerManager = PeerManager::getInstance();
 
@@ -125,13 +121,6 @@ void setup() {
 
 void loop() {
     peerManager.loop();
-
-    if (debounceLDRTimer.checkAndReset()) {
-        int ambientLightValue = analogRead(LDR_PIN);
-        if (ambientLightValue < SOGLIA_LUCE_ACCENSIONE) peerManager.setState(true);
-        else if (ambientLightValue > SOGLIA_LUCE_SPEGNIMENTO) peerManager.setState(false);
-        Serial.printf("Luce ambientale %d.", ambientLightValue);
-    }
 
     if (heartbeatTimer.checkAndReset()) peerManager.sendHeartbeat();
     if (retryTimer.checkAndReset()) peerManager.processRetryQueue();

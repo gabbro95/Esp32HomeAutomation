@@ -223,18 +223,37 @@ void PeerManager::sendAck(const uint8_t* macDest) {
     sendEspNowMessage(macDest, ackMsg);
 }
 
-void PeerManager::setState(bool setstate) {
-    state.isNight = setstate;
+void PeerManager::setTimer() {
+    switchOffSecurityTimer.reset();
+}
+
+
+void PeerManager::setState(bool new_state) {
+    state.isOn = new_state;
 }
 
 void PeerManager::loop() {
+    if (state.isOn) {
+        if (!switchOffSecurityTimer.check()) switchOffSecurityTimer.reset();
+        else {
+            if (switchOffSecurityTimer.isExpired()) {
+                digitalWrite(RELAY_PIN, HIGH);
+                state.isOn = false;
+                EspNowMessage pending{};
+                pending.stateOn = state.isOn;
+                pending.deviceId = DEV_CENTRAL_MASTER;
+                pending.command = CMD_STATUS;
+                mirrorStatusToUIs(pending, nullptr);
+            }
+        }
+    } else if (switchOffSecurityTimer.check()) switchOffSecurityTimer.stop();
+
     // Itera su tutti i dispositivi registrati e chiama il loro loop()
     // NB: Questo presume che i tuoi dispositivi siano in un array/vettore
     // chiamato "peers" e il loro numero sia "peerCount".
     // Adatta questo codice alla tua struttura dati reale.
-    
     for (PeerDevice* p : peers) { // o qualsiasi sia il tuo modo di ciclare
-        if (p->getDeviceId() == DEV_GATE || p->getDeviceId() == DEV_SMALL_GATE) {
+        if (p->getDeviceId() == DEV_GATE || p->getDeviceId() == DEV_SMALL_GATE || p->getDeviceId() == DEV_GARAGE) {
             p->loop();
         }
     }

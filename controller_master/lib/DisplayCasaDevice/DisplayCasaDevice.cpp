@@ -23,7 +23,7 @@ void DisplayCasaDevice::handleMessage(const EspNowMessage& msg) {
             pongMsg.sequenceNum = 0; 
             pongMsg.value = 0;
 
-            if (sendEspNowMessage(this->getMacAddress(), pongMsg)) {
+            if (peerManager->sendEspNowMessage(this->getMacAddress(), pongMsg)) {
                 Serial.println("[DisplayDevice] PONG inviato con successo.");
             } else {
                 Serial.println("[DisplayDevice] ❌ Errore nell'invio del PONG.");
@@ -36,10 +36,13 @@ void DisplayCasaDevice::handleMessage(const EspNowMessage& msg) {
             EspNowMessage pending{};
             if (digitalRead(RELAY_PIN)) {
                 digitalWrite(RELAY_PIN, LOW);
-                pending.stateOn = true;
+                peerManager->setState(true);
+                peerManager->setTimer();
+                pending.stateOn = peerManager->getState().isOn;
             } else {
                 digitalWrite(RELAY_PIN, HIGH);
-                pending.stateOn = false;
+                peerManager->setState(true);
+                pending.stateOn = peerManager->getState().isOn;
             }
             pending.deviceId = finalDest;
             pending.command = CMD_STATUS;
