@@ -12,6 +12,6 @@ void setup() {
 }
 
 void loop() {
-  // Aggiorniamo la logica (Touch, Timer, Watchdog, LVGL loop)
-  dashboard.update();
+    // Aggiorniamo la logica (Touch, Timer, Watchdog, LVGL loop)
+    dashboard.update();
 }

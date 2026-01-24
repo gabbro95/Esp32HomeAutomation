@@ -1,47 +1,58 @@
-/*
- * MyTimer.h - Dichiarazione della classe MyTimer
- *
- * Questa libreria fornisce un semplice timer non bloccante.
- *
- * Utilizzo:
- * #include "MyTimer.h"
- * MyTimer t1 = MyTimer();
- *
- * t1.set(1000); // Imposta il timer a 1000ms (1 secondo)
- *
- * if (t1.check()) {
- * // Il tempo è scaduto
- * t1.set(1000); // Riavvia il timer
- * }
-*/
+#pragma once
+#include <Arduino.h>
 
-#ifndef mytimer_h
-#define mytimer_h
-
-// Dichiarazione della classe MyTimer
 class MyTimer {
-  private:
-  int tempo; // Durata del timer in millisecondi
-  unsigned long t1; // Tempo di inizio del timer
-  int attivo; // Flag per indicare se il timer è attivo (1) o inattivo (0)
+public:
+    MyTimer(unsigned long intervalMs = 1000)
+        : interval(intervalMs), last(millis()), state(false) {}
 
-  public:
-  // Costruttore della classe
-  MyTimer();
+    // imposta un nuovo intervallo
+    void setInterval(unsigned long intervalMs) {
+        interval = intervalMs;
+        state = true;
+    }
 
-  // Metodo per impostare il timer con una durata 'n' in ms
-  void set(int n);
+    // resetta il timer al tempo corrente
+    void reset() {
+        last = millis();
+        state = true;
+    }
 
-  // Metodo per controllare se il timer è scaduto
-  // Restituisce 1 se scaduto e si resetta, 0 altrimenti
-  int check();
+    // ritorna true se il timer è scaduto
+    bool isExpired() {
+        unsigned long now = millis();
+        if (now - last >= interval) {
+            state = false;  
+            return true;
+        }
+        return false;
+    }
 
-  // Metodo per controllare se il timer è attivo (correzione)
-  // Restituisce 1 se attivo, 0 altrimenti
-  int isSet();
+    // ritorna true e resetta se scaduto (modo "one-shot")
+    bool checkAndReset() {
+        if (isExpired()) {
+            reset();
+            return true;
+        }
+        return false;
+    }
 
-  // Metodo per resettare il timer
-  void resetSet();
+    // ritorna se il timer è attivo
+    bool check() {
+        return state;
+    }
+
+    // ritorna quanti ms sono passati dall’ultimo reset
+    unsigned long elapsed() {
+        return millis() - last;
+    }
+    // ferma il timer
+    void stop() {
+        state = false;
+    }
+
+private:
+    unsigned long interval;
+    unsigned long last;
+    bool state;
 };
-
-#endif

@@ -4,28 +4,26 @@
 #include <Arduino.h>
 #include <string.h> // Per memcpy
 
+// Macro calcolo della durata del Timer
+#define SEC_TO_MS(s) ((s) * 1000UL)			// RESTITUISCE IL VALORE IN SECONDI
+#define MIN_TO_MS(m) ((m) * 60 * 1000UL)	// RESTITUISCE IL VALORE IN MINUTI	
+
 // --- Parametri di timing comuni ---
 
-// Macro calcolo della durata del Timer
-#define SEC_TO_MS(s) ((s) * 1000UL)
-#define MIN_TO_MS(m) ((m) * 60 * 1000UL)
-
 // Tempi Timer
-#define HEATER_DURATION_ON  	MIN_TO_MS(15)
-#define HEATER_DURATION_OFF 	MIN_TO_MS(5)
-#define WATER_PUMP_DURATION 	SEC_TO_MS(30) 
-
 const unsigned long HEARTBEAT_INTERVAL_MS = SEC_TO_MS(10);
 const unsigned long RETRY_INTERVAL_MS     = SEC_TO_MS(5);
-const uint8_t RETRY_MAX_ATTEMPTS          = SEC_TO_MS(3);
 const unsigned long OFFLINE_TIMEOUT_MS    = SEC_TO_MS(15);
-const unsigned long OFF_INTERVAL_MS = MIN_TO_MS(2);
-const unsigned long OFF_TIMER_INTERVAL_MS = MIN_TO_MS(15);
+const unsigned long OFF_LIGHT_INTERVAL_MS = MIN_TO_MS(2);
+const unsigned long OFF_TIMER_LIGHT_INTERVAL_MS = MIN_TO_MS(15);
+const unsigned long OFF_TIMER_GATE_INTERVAL_MS = MIN_TO_MS(5);
+const unsigned long OFF_TIMER_GATE_MOVING_INTERVAL_MS = SEC_TO_MS(30);
 const unsigned long DEBOUNCE_LDR_MS = MIN_TO_MS(1);
 
-const int RELAY_PIN = 15;     // PIN del relay per accendere la luce
-const int LDR_PIN = 33;     // PIN del crepuscolare per il controllo della luce
+const int SOGLIA_LUCE_ACCENSIONE = 10; 		// Valore ADC: Se è PIÙ BASSO di questo, accendi la luce (è scuro).
+const int SOGLIA_LUCE_SPEGNIMENTO = 100; 	// Valore ADC: Se è PIÙ ALTO di questo, spegni la luce (è giorno).
 
+const uint8_t RETRY_MAX_ATTEMPTS = 3;
 const int MAX_PEERS = 10;
 // --- ID dei dispositivi (DeviceType) ---
 typedef enum : uint8_t {
@@ -59,7 +57,7 @@ typedef enum : uint8_t {
 	GATE_ACTUAL_STOPPED
 } GateActualState;
 
-// --- Stato Attuale del Cancelletto (GateActualState) ---
+// --- Stato Attuale del Cancelletto (SmallGateActualState) ---
 typedef enum : uint8_t {
 	SMALL_GATE_ACTUAL_CLOSED = 0, 
 	SMALL_GATE_ACTUAL_OPEN,
@@ -69,7 +67,6 @@ typedef enum : uint8_t {
 typedef struct __attribute__((packed)) {
 	uint8_t version{1};
 	DeviceType deviceId{DEV_CENTRAL};
-	DeviceType deviceReply{DEV_CENTRAL};
 	CommandType command{CMD_STATUS};
 	GateActualState gateActual{GATE_ACTUAL_CLOSED};
 	SmallGateActualState smallGateActual{SMALL_GATE_ACTUAL_CLOSED}; 
@@ -80,32 +77,32 @@ typedef struct __attribute__((packed)) {
 	uint32_t sequenceNum{0};
 } EspNowMessage;
 
-// --- Strutture di Stato Interne (Non inviate via ESP-NOW) ---
-// Stato Interno del Garage (utile per la Centrale)
+// --- Strutture di Stato Interne ---
+// Stato Interno del Garage
 struct GarageState {
-	bool isOn = false;
-	bool pending = false; // TRUE = comando inviato ma non ancora confermato
+	bool isOnLight = false;	// luci del Garage
+	bool pending = false; 	// TRUE = comando inviato ma non ancora confermato
 };
 
-// Stato Interno del Cancello (utile per la Centrale)
+// Stato Interno del Cancello
 struct GateState {
 	GateActualState gateActual = GATE_ACTUAL_CLOSED;
-	bool isMoving = false;
-	bool pending = false; // comando in corso
+	bool isMoving = false;	// movimento del Gate
+	bool pending = false; 	// comando in corso
 };
 
-// Stato Interno del Cancelletto (utile per la Centrale)
+// Stato Interno del SmallGate
 struct SmallGateState {
 	SmallGateActualState smallGateActual = SMALL_GATE_ACTUAL_CLOSED;
-	bool isOn = false;
-	bool isCall = false;
-	bool pending = false; // comando in corso
+	bool isOnLight = false;	// TRUE = luci SmallGate accese
+	bool isCall = false;	// chiamata da SmallGate
+	bool pending = false; 	// comando in corso
 };
 
-// Stato Interno del sole
+// Stato Interno del CentralMaster
 struct LightState {
-	bool isOn = false;
-	bool isNight= false;
+	bool isOnLight = false;	// luci CentralMaster
+	bool isNight= false;	// controllo lux CentralMaster
 };
 
 // Informazioni sul Peer (Usate solo dalla Centrale)

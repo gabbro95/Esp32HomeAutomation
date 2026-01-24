@@ -56,9 +56,21 @@ private:
     GarageState garage;
     SmallGateState smallGate;
     LightState lightExtern;
+
+    const int BUZZER_PIN = 32; 
+    const int RIPETIZIONI = 5; 
+    const unsigned long INTERVALLO = 500;
+    
+    // --- Buffer statici per LVGL ---
+    lv_disp_draw_buf_t draw_buf;
+    lv_color_t buf1[SCREEN_WIDTH * 10];
+    uint16_t calData[5] = {481, 3030, 543, 3128, 4}; 
+    // Nuovi dati calibrazione per Rotazione 0: {481, 3030, 543, 3128, 4}
+    // Nuovi dati calibrazione per Rotazione 1: {463, 3289, 359, 3322, 7}
     
     uint32_t sequenceNum = 0;
     bool touchState = false;
+    bool retroState = false;
 
     // --- GESTIONE CODA MESSAGGI (FIFO) ---
     // Usiamo una coda circolare per non perdere messaggi ravvicinati (ACK + STATUS)
@@ -69,17 +81,18 @@ private:
     // --- Timer Interni ---
     MyTimer heartbeatTimer;
     MyTimer linkWatchdog;
-    MyTimer spegnimentoDisplay; // Timer per lo spegnimento backlight (ex timerDisplay)
-    MyTimer accensioneDisplay;
-    MyTimer controlTouch;
-    MyTimer linkDisplayTimer;
+    MyTimer linkWatch;
+    MyTimer spegnimentoRetroDisplay; // Timer per lo spegnimento backlight (ex timerDisplay)
+    MyTimer linkLvDisplayTimer;
     MyTimer buzzerTimer;
+    MyTimer timeOutSensorGate;
 
     // Variabili per il controllo della melodia
     int counter = 0; // Indice della nota corrente da suonare
     bool isPlaying = false; // Stato: la melodia è in riproduzione?
     bool play = false; // Stato: la melodia
     bool isCall = false;    // Stato: chiamata
+    DeviceType devOff;
 
     // Timer LVGL
     esp_timer_handle_t lvgl_tick_timer;
@@ -92,6 +105,7 @@ private:
     void updateCallSmallGateUI();
     void updateLigthExternUI();
     void updateLigthSmallGateUI();
+    void setNoLinkStatusDevice();
     void setNoLinkStatus();
 
     // Funzione del campanello

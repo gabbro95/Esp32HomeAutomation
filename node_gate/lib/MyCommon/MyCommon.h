@@ -4,16 +4,19 @@
 #include <Arduino.h>
 #include <string.h> // Per memcpy
 
+// Macro calcolo della durata del Timer
+#define SEC_TO_MS(s) ((s) * 1000UL)			// RESTITUISCE IL VALORE IN SECONDI
+#define MIN_TO_MS(m) ((m) * 60 * 1000UL)	// RESTITUISCE IL VALORE IN MINUTI	
+
 // --- Parametri di timing comuni ---
-const unsigned long HEARTBEAT_INTERVAL_MS = 10000;
-const unsigned long RETRY_INTERVAL_MS     = 5000;
+const unsigned long HEARTBEAT_INTERVAL_MS = SEC_TO_MS(10);
+const unsigned long LIMIT_DELAY_MS = SEC_TO_MS(2);
+const unsigned long CONTROL_DELAY_MS = SEC_TO_MS(5);
+const unsigned long INPUT_SENSOR_DELAY_MS = 200;
+const unsigned long AUTO_CLOSE_DELAY_MS = SEC_TO_MS(5);
+
 const uint8_t RETRY_MAX_ATTEMPTS          = 3;
-const unsigned long OFFLINE_TIMEOUT_MS    = 15000;
 const int MAX_PEERS                       = 10;
-const unsigned long OFF_INTERVAL_MS = 60000;
-const unsigned long DEBOUNCE_LDR_MS = 60000;
-const int RELAY_PIN = 15;     // PIN del relay per accendere la luce
-const int LDR_PIN = 33;     // PIN del crepuscolare per il controllo della luce
 
 // --- ID dei dispositivi (DeviceType) ---
 typedef enum : uint8_t {
@@ -34,7 +37,8 @@ typedef enum : uint8_t {
 	CMD_CALL,                 // Comando di Chiamata Cancelletto
 	CMD_STATUS,               // Richiesta di stato
 	CMD_PING,                 // Heartbeat / Richiesta link
-	CMD_PONG                  // Risposta Heartbeat
+	CMD_PONG,                 // Risposta Heartbeat
+    CMD_ACK                   // Conferma di ricezione comando
 } CommandType;
 
 // --- Stato Attuale del Cancello (GateActualState) ---
@@ -56,7 +60,6 @@ typedef enum : uint8_t {
 typedef struct __attribute__((packed)) {
 	uint8_t version{1};
 	DeviceType deviceId{DEV_CENTRAL};
-	DeviceType deviceReply{DEV_CENTRAL};
 	CommandType command{CMD_STATUS};
 	GateActualState gateActual{GATE_ACTUAL_CLOSED};
 	SmallGateActualState smallGateActual{SMALL_GATE_ACTUAL_CLOSED}; 
@@ -70,7 +73,7 @@ typedef struct __attribute__((packed)) {
 // --- Strutture di Stato Interne (Non inviate via ESP-NOW) ---
 // Stato Interno del Garage (utile per la Centrale)
 struct GarageState {
-	bool isOn = false;
+	bool isOnLight = false;
 	bool pending = false; // TRUE = comando inviato ma non ancora confermato
 };
 
@@ -84,14 +87,14 @@ struct GateState {
 // Stato Interno del Cancelletto (utile per la Centrale)
 struct SmallGateState {
 	SmallGateActualState smallGateActual = SMALL_GATE_ACTUAL_CLOSED;
-	bool isOn = false;
+	bool isOnLight = false;
 	bool isCall = false;
 	bool pending = false; // comando in corso
 };
 
 // Stato Interno del sole
 struct LightState {
-	bool isOn = false;
+	bool isOnLight = false;
 	bool isNight= false;
 };
 

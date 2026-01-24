@@ -46,6 +46,10 @@ public:
     unsigned long elapsed() {
         return millis() - last;
     }
+    // ferma il timer
+    void stop() {
+        state = false;
+    }
 
 private:
     unsigned long interval;

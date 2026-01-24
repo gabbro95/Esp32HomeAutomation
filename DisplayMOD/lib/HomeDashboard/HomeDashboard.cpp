@@ -2,23 +2,11 @@
 
 #define DEBUG
 
-const int BUZZER_PIN = 32; 
-const int RIPETIZIONI = 5; 
-const unsigned long INTERVALLO = 500;
-
 // Istanza globale del display TFT 
 TFT_eSPI tft = TFT_eSPI();
 
 // Puntatore globale alla classe
 HomeDashboard* dashboardInstance = nullptr;
-
-// --- Buffer statici per LVGL ---
-static lv_disp_draw_buf_t draw_buf;
-static lv_color_t buf1[SCREEN_WIDTH * 10];
-static uint16_t calData[5] = {481, 3030, 543, 3128, 4}; 
-// Nuovi dati calibrazione per Rotazione 0: {481, 3030, 543, 3128, 4}
-// Nuovi dati calibrazione per Rotazione 1: {463, 3289, 359, 3322, 7}
-
 
 // ==========================================================
 // FUNZIONE PER SUONARE LA MELODIA DING-DONG
@@ -88,15 +76,14 @@ static void toast_close_cb(lv_timer_t * t) {
 }
 
 // --- Implementazione Classe HomeDashboard ---
-
 HomeDashboard::HomeDashboard() : 
     heartbeatTimer(HEARTBEAT_INTERVAL_MS),
     linkWatchdog(OFFLINE_TIMEOUT_MS * 2),
-    spegnimentoDisplay(15000), 
-    accensioneDisplay(500),
-    controlTouch(10),
-    linkDisplayTimer(5),
-    buzzerTimer(INTERVALLO)
+    linkWatch(OFFLINE_TIMEOUT_MS),
+    spegnimentoRetroDisplay(TIMEOUT_MS_RETRO_DISPLAY_OFF), 
+    linkLvDisplayTimer(5),
+    buzzerTimer(INTERVALLO),
+    timeOutSensorGate(TIMEOUT_MS)
 {
     dashboardInstance = this;
 }
@@ -150,11 +137,8 @@ void HomeDashboard::begin() {
 
     heartbeatTimer.reset();
     linkWatchdog.reset();
-    linkDisplayTimer.reset();
-    controlTouch.reset();
-    accensioneDisplay.reset();
-    spegnimentoDisplay.reset();
-    buzzerTimer.reset();
+    linkLvDisplayTimer.reset();
+
 }
 
 void HomeDashboard::setupEspNow() {
@@ -188,7 +172,7 @@ void HomeDashboard::showToast(const char* text, uint32_t duration_ms, bool isErr
     lv_color_t bgColor;
     if (isError) {
         bgColor = lv_color_hex(0xAA0000); 
-    } else if (strcmp(text, "Centrale: Preso") == 0 || strstr(text, "Centrale")) {
+    } else if (strcmp(text, "Centrale: Preso") == 0 || strstr(text, "Centrale") == 0 || strstr(text, nullptr)) {
         bgColor = lv_color_hex(0x0055AA);
     } else {
         bgColor = lv_color_hex(0x00AA00); 
@@ -211,8 +195,7 @@ void HomeDashboard::showToast(const char* text, uint32_t duration_ms, bool isErr
 
 void HomeDashboard::sendMessage(DeviceType destDevice, CommandType command, uint32_t value) {
     EspNowMessage msg = {};
-    msg.deviceId    = destDevice; 
-    msg.deviceReply = DEV_DISPLAY_CASA;      
+    msg.deviceId    = destDevice;      
     msg.command     = command;
     msg.value       = value;
     msg.sequenceNum = sequenceNum++;
@@ -220,12 +203,13 @@ void HomeDashboard::sendMessage(DeviceType destDevice, CommandType command, uint
     esp_err_t res = esp_now_send(macCentralMaster, (uint8_t*)&msg, sizeof(msg));
 
     if (res == ESP_OK) {
-        showToast("Invio OK", 1000, false); 
+        if (value == 0) showToast("Invio OK\n", 1000, false); 
+        else if (value == 9) showToast("Sensore Gate OFF\n", 2000, false); 
         #ifndef DEBUG
         Serial.printf("📤 Send OK dest=%u\n", destDevice);
         #endif
     } else {
-        showToast("Errore Invio!", 2000, true);
+        showToast("Errore Invio!\n", 2000, true);
         #ifndef DEBUG
         Serial.println("📤 Send FAIL");
         #endif
@@ -254,7 +238,7 @@ void HomeDashboard::handleIncomingMessageISR(const uint8_t *mac, const uint8_t *
 // Processa un singolo messaggio estratto dalla coda
 void HomeDashboard::processSingleMessage(const EspNowMessage& msg) {
     
-    // GESTIONE ACK DALLA CENTRALE
+    // GESTIONE ACK DA PEERMANAGER
     if (msg.command == CMD_ACK) {
         showToast("Centrale: Preso", 2000, false); 
         linkWatchdog.reset();
@@ -262,27 +246,29 @@ void HomeDashboard::processSingleMessage(const EspNowMessage& msg) {
     }
 
     if (msg.command == CMD_STATUS) {
+        if (msg.statePending == 0) {
+            devOff = msg.deviceId;
+            linkWatch.reset();
+            return;
+        }
         if (msg.deviceId == DEV_GARAGE) {
-            garage.isOn = msg.stateOn;
+            garage.isOnLight = msg.stateOn;
             updateLightGarageUI();
         } else if (msg.deviceId == DEV_GATE) {
             gate.gateActual = msg.gateActual;
             updateGateUI();
         } else if (msg.deviceId == DEV_SMALL_GATE) {
             smallGate.smallGateActual = msg.smallGateActual;
-            smallGate.isOn = msg.stateOn;
+            smallGate.isOnLight = msg.stateOn;
             updateSmallGateUI();
             updateLigthSmallGateUI();
         } else if (msg.deviceId == DEV_CENTRAL_MASTER) {
-            lightExtern.isOn = msg.stateOn; 
+            lightExtern.isOnLight = msg.stateOn; 
             updateLigthExternUI();
         }
         linkWatchdog.reset();
-        return;
     } else if (msg.command == CMD_CALL) {
-        isCall = true;
         updateCallSmallGateUI();
-        return;
     }
 }
 
@@ -290,9 +276,17 @@ void HomeDashboard::processButtonEvent(DeviceType target, CommandType cmd, const
     #ifndef DEBUG
     Serial.println(debugMsg);
     #endif
-    if (cmd == CMD_CALL) {
+    if (debugMsg == "Btn Chiamata") {
         isCall = false;
         updateCallSmallGateUI();
+        sendMessage(target, cmd, 0);
+        return;
+    }
+    if (!timeOutSensorGate.check()) timeOutSensorGate.reset();
+    else if (timeOutSensorGate.check() && timeOutSensorGate.isExpired()) {
+        sendMessage(target, cmd, 9);
+        timeOutSensorGate.stop();
+        return;
     }
     sendMessage(target, cmd, 0);
 }
@@ -385,8 +379,8 @@ void HomeDashboard::updateGateUI() {
   switch (gate.gateActual) {
       case GATE_ACTUAL_CLOSED: color = lv_color_hex(0xAA0000); statusText = "Cancello: CHIUSO"; break;
       case GATE_ACTUAL_OPEN: color = lv_color_hex(0x00AA00); statusText = "Cancello: APERTO"; break;
-      case GATE_ACTUAL_OPENING: 
-      case GATE_ACTUAL_CLOSING: color = lv_color_hex(0xFF8800); statusText = "Cancello: MOVIMENTO"; break;
+      case GATE_ACTUAL_OPENING: color = lv_color_hex(0xFF8800); statusText = "Cancello: APERTURA"; break;
+      case GATE_ACTUAL_CLOSING: color = lv_color_hex(0xFF8800); statusText = "Cancello: CHIUSURA"; break;
       case GATE_ACTUAL_STOPPED: color = lv_color_hex(0x0088AA); statusText = "Cancello: FERMO"; break;
       default: color = lv_color_hex(0x888888); statusText = "Cancello: SCONOSCIUTO"; break;
   }
@@ -395,7 +389,7 @@ void HomeDashboard::updateGateUI() {
 }
 
 void HomeDashboard::updateLightGarageUI() {
-  if (garage.isOn) {
+  if (garage.isOnLight) {
     lv_obj_set_style_bg_color(btn_light_garage, lv_color_hex(0x00AA00), 0);
     lv_label_set_text(label_light_garage, "Garage: ACCESO");
   } else {
@@ -427,7 +421,7 @@ void HomeDashboard::updateCallSmallGateUI() {
 }
 
 void HomeDashboard::updateLigthExternUI() {
-  if (lightExtern.isOn) {
+  if (lightExtern.isOnLight) {
     lv_obj_set_style_bg_color(btn_light_extern, lv_color_hex(0x00AA00), 0);
     lv_label_set_text(label_light_extern, "Luci Esterne: ACCESE");
   } else {
@@ -437,13 +431,38 @@ void HomeDashboard::updateLigthExternUI() {
 }
 
 void HomeDashboard::updateLigthSmallGateUI() {
-  if (smallGate.isOn) {
+  if (smallGate.isOnLight) {
     lv_obj_set_style_bg_color(btn_light_small_gate, lv_color_hex(0x00AA00), 0);
     lv_label_set_text(label_light_small_gate, "Cancelletto: ACCESO");
   } else {
     lv_obj_set_style_bg_color(btn_light_small_gate, lv_color_hex(0xAA0000), 0);
     lv_label_set_text(label_light_small_gate, "Cancelletto: SPENTO");
   }
+}
+
+void HomeDashboard::setNoLinkStatusDevice() {
+    lv_color_t gray = lv_color_hex(0x888888);
+    const char* txt = "NO LINK";
+    
+    if (devOff == DEV_GARAGE) {
+        lv_label_set_text(label_light_garage, txt);
+        lv_obj_set_style_bg_color(btn_light_garage, gray, 0);
+    }
+    
+    if (devOff == DEV_GATE) {
+        lv_label_set_text(label_gate, txt);
+        lv_obj_set_style_bg_color(btn_gate, gray, 0);
+    }
+
+    if (devOff == DEV_SMALL_GATE) {
+        lv_label_set_text(label_small_gate, txt);
+        lv_obj_set_style_bg_color(btn_small_gate, gray, 0);
+        lv_label_set_text(label_light_small_gate, txt);
+        lv_obj_set_style_bg_color(btn_light_small_gate, gray, 0);
+        lv_label_set_text(label_call_small_gate, txt);
+        lv_obj_set_style_bg_color(btn_call_small_gate, gray, 0);
+    }
+
 }
 
 void HomeDashboard::setNoLinkStatus() {
@@ -470,6 +489,26 @@ void HomeDashboard::setNoLinkStatus() {
 }
 
 void HomeDashboard::update() {
+    // Gestione Touchscreen e Backlight
+    if (spegnimentoRetroDisplay.check() && spegnimentoRetroDisplay.isExpired()) {
+        digitalWrite(TFT_BL, HIGH); 
+        retroState = false;
+        spegnimentoRetroDisplay.stop();
+    }
+
+    if (linkLvDisplayTimer.checkAndReset()) {
+        lv_timer_handler();
+        touchState = !digitalRead(TFT_IRQ);
+        if (retroState && touchState) spegnimentoRetroDisplay.reset(); 
+        else {
+            if (touchState) {
+                digitalWrite(TFT_BL, LOW); 
+                retroState = true;
+                spegnimentoRetroDisplay.reset();
+            }
+        }
+    }
+
     // --- CONTROLLO CODA MESSAGGI ---
     // Processiamo i messaggi con un LIMITE per non bloccare il loop
     // Se arrivano troppi messaggi insieme, ne leggiamo max 5 per ciclo, 
@@ -488,34 +527,20 @@ void HomeDashboard::update() {
         processedCount++;
     }
 
-    // Gestione Touchscreen e Backlight
-    if (controlTouch.checkAndReset() && digitalRead(TFT_BL)) {
-        touchState = !digitalRead(TFT_IRQ);
-    }
-    
-    if (accensioneDisplay.checkAndReset()) {
-        if (touchState && digitalRead(TFT_BL)) {
-            digitalWrite(TFT_BL, LOW); 
-            spegnimentoDisplay.reset();
-        }
-    }
-
-    if (spegnimentoDisplay.isExpired() && !digitalRead(TFT_BL)) {
-        digitalWrite(TFT_BL, HIGH); 
-    }
-
-    if (linkDisplayTimer.checkAndReset()) {
-        lv_timer_handler();
-    }
-
-    // 2. AGGIORNA IL BUZZER
+    // AGGIORNA IL BUZZER
     // Questa funzione avanza la melodia se il tempo è scaduto
     updateBuzzer();
-  
+    
+    // STATUS
     // Heartbeat
     if (heartbeatTimer.isExpired()) {
         sendMessage(DEV_CENTRAL_MASTER, CMD_PING, 0); 
         heartbeatTimer.reset();
+    }
+
+    // Watch
+    if (linkWatch.check() && linkWatch.isExpired()) {
+        setNoLinkStatusDevice();
     }
 
     // Watchdog

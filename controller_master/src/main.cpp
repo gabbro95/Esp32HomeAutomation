@@ -8,16 +8,9 @@
 #include "PeerManager.h"
 #include "GarageDevice.h"
 #include "GateDevice.h"
-#include "SmallGateDevice.h"
-#include "RemoteDevice.h"
-#include "DisplayCasaDevice.h"
-#include "DisplayRusticoDevice.h"
+#include "DisplayDevice.h"
 
 static const char* DEVICE_NAME = "Master";
-
-MyTimer heartbeatTimer(HEARTBEAT_INTERVAL_MS);
-MyTimer retryTimer(RETRY_INTERVAL_MS);
-MyTimer offlineScanTimer(2000);
 
 PeerManager& peerManager = PeerManager::getInstance();
 
@@ -34,8 +27,8 @@ void onDataSent(const uint8_t* mac, esp_now_send_status_t status) {
 void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
     if (len != sizeof(EspNowMessage)) return;
 
-    EspNowMessage msg;
-    memcpy(&msg, incomingData, sizeof(msg));
+    EspNowMessage newMessage;
+    memcpy(&newMessage, incomingData, sizeof(newMessage));
 
     PeerDevice* sender = peerManager.findPeerByMac(mac);
     if (!sender) {
@@ -47,7 +40,7 @@ void onDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
     
     sender->setOnline(true);
     sender->updateLastSeen();
-    sender->handleMessage(msg);
+    sender->handleMessage(newMessage);
 }
 
 void setupEspNow() {
@@ -101,8 +94,6 @@ void setupEspNow() {
 
 void setup() {
     Serial.begin(115200);
-    pinMode(RELAY_PIN, OUTPUT); digitalWrite(RELAY_PIN, HIGH);
-    pinMode(LDR_PIN, INPUT);
 
     delay(200);
     Serial.println("[boot] Centrale avvio...");
@@ -111,18 +102,17 @@ void setup() {
 
     peerManager.addPeer(new GarageDevice(macGarage, &peerManager));
     peerManager.addPeer(new GateDevice(macGate, &peerManager));
-    peerManager.addPeer(new SmallGateDevice(macSmallGate, &peerManager));
-    peerManager.addPeer(new RemoteDevice(macRemote, &peerManager));
-    peerManager.addPeer(new DisplayCasaDevice(macDisplayCasa, &peerManager));
-    peerManager.addPeer(new DisplayRusticoDevice(macDisplayRustico, &peerManager));
+    peerManager.addPeer(new GateDevice(macSmallGate, &peerManager));
+    peerManager.addPeer(new DisplayDevice(macRemote, &peerManager));
+    peerManager.addPeer(new DisplayDevice(macDisplayCasa, &peerManager));
+    peerManager.addPeer(new DisplayDevice(macDisplayRustico, &peerManager));
+
+    peerManager.macCentralMaster();
+    peerManager.setTimer();
 
     Serial.println("[boot] Centrale pronta");
 }
 
 void loop() {
     peerManager.loop();
-
-    if (heartbeatTimer.checkAndReset()) peerManager.sendHeartbeat();
-    if (retryTimer.checkAndReset()) peerManager.processRetryQueue();
-    if (offlineScanTimer.checkAndReset()) peerManager.scanOfflinePeers();
 }

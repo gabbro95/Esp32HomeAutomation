@@ -3,19 +3,18 @@
 #include "MyCommon.h"
 #include "GarageDevice.h"
 #include "GateDevice.h"
-#include "SmallGateDevice.h"
 #include <Arduino.h>
 #include <esp_now.h>
-
+// Creazione del PeerManager
 PeerManager& PeerManager::getInstance() {
     static PeerManager instance;
     return instance;
 }
-
-void PeerManager::addPeer(PeerDevice* peer) {
-    peers.push_back(peer);
+// Aggiunta di un nuovo Device
+void PeerManager::addPeer(PeerDevice* device) {
+    peers.push_back(device);
 }
-
+// ritorna il Device associato al mac
 PeerDevice* PeerManager::findPeerByMac(const uint8_t* mac) {
     for (PeerDevice* p : peers) {
         if (macEqual(p->getMacAddress(), mac)) {
@@ -24,28 +23,35 @@ PeerDevice* PeerManager::findPeerByMac(const uint8_t* mac) {
     }
     return nullptr;
 }
-
-PeerDevice* PeerManager::findPeerByDevice(DeviceType dev) {
+// ritorna il Device associato al devName
+PeerDevice* PeerManager::findPeerByDevice(DeviceType devName) {
     for (PeerDevice* p : peers) {
-        if (p->getDeviceId() == dev) {
+        if (p->getDeviceId() == devName) {
             return p;
         }
     }
     return nullptr;
 }
-
+// Mac centralMaster
+void PeerManager::macCentralMaster() {
+    uint8_t macCentralMaster[6] = { 0x64, 0xB7, 0x08, 0xC9, 0xA0, 0xB8  };
+    pinMode(RELAY_PIN, OUTPUT); digitalWrite(RELAY_PIN, HIGH);
+    pinMode(LDR_PIN, INPUT);
+}
+// Invio msg, se non riesce lo metto in retryQueue
 void PeerManager::sendOrQueue(const uint8_t* mac, const EspNowMessage& msg) {
     if (!sendEspNowMessage(mac, msg)) {
-        enqueueRetryPrio(mac, msg, classifyPrio(msg));
+        enqueueRetryPrio(classifyPrio(msg), msg);
         Serial.printf("[queue] added message for dev %u, prio %u\n", (unsigned)msg.deviceId, (unsigned)classifyPrio(msg));
     } else {
         Serial.printf("[tx] sent to dev %u\n", (unsigned)msg.deviceId);
     }
 }
-
+// Invio messaggi in corso
 void PeerManager::processRetryQueue() {
     for (int i = 0; i < RETRY_Q_SIZE; ++i) {
         if (!retryQueue[i].active) continue;
+
         PendingMessage &slot = retryQueue[i];
         if (slot.attempts >= RETRY_MAX_ATTEMPTS) {
             DeviceType targetDev = slot.msg.deviceId;
@@ -59,7 +65,8 @@ void PeerManager::processRetryQueue() {
             peerStatus.command = CMD_STATUS;
             peerStatus.statePending = 0;
             peerStatus.sequenceNum = getNextSequenceNum();
-            mirrorStatusToUIs(peerStatus, nullptr);
+            // Ora msg non è più aggiornato con peerStatus
+            mirrorStatusToUIs(peerStatus);
             slot.active = false;
             retryCount--;
             continue;
@@ -74,74 +81,47 @@ void PeerManager::processRetryQueue() {
         }
     }
 }
-
-void PeerManager::mirrorStatusToUIs(const EspNowMessage& msg, const uint8_t* excludeMac) {
+// Aggiornamento Display
+void PeerManager::mirrorStatusToUIs(const EspNowMessage& msg) {
     for (PeerDevice* p : peers) {
-        if (p->getDeviceId() == DEV_REMOTE || p->getDeviceId() == DEV_DISPLAY_CASA || p->getDeviceId() == DEV_DISPLAY_RUSTICO) {
-            if (excludeMac && macEqual(p->getMacAddress(), excludeMac)) continue;
-            EspNowMessage copy = msg;
+        EspNowMessage copy{};
+        if ( (p->getDeviceId() == DEV_REMOTE && p->isOnline()) || p->getDeviceId() == DEV_DISPLAY_CASA || p->getDeviceId() == DEV_DISPLAY_RUSTICO) {
+            copy = msg;
             copy.sequenceNum = getNextSequenceNum();
             sendOrQueue(p->getMacAddress(), copy);
         }
     }
 }
-
+// Invio messaggio con lo stato di tutti i Device
 void PeerManager::sendFullStateToUI(const uint8_t* uiMac) {
     // Implementazione per inviare lo stato completo
+
     PeerDevice* garage = findPeerByDevice(DEV_GARAGE);
-    if (garage) {
-        GarageDevice* gd = static_cast<GarageDevice*>(garage);
-        EspNowMessage msg{};
-        msg.deviceId = gd->getDeviceId();
-        msg.command = CMD_STATUS;
-        msg.stateOn = gd->getState().isOn;
-        msg.sequenceNum = getNextSequenceNum();
-        sendOrQueue(uiMac, msg);
-    }
+    sendStatusMessage(garage->getMacAddress());
 
     PeerDevice* gate = findPeerByDevice(DEV_GATE);
-    if (gate) {
-        GateDevice* gd = static_cast<GateDevice*>(gate);
-        EspNowMessage msg{};
-        msg.deviceId = gd->getDeviceId();
-        msg.command = CMD_STATUS;
-        msg.gateActual = gd->getState().gateActual;
-        msg.stateOn = gd->getState().isMoving;
-        msg.sequenceNum = getNextSequenceNum();
-        sendOrQueue(uiMac, msg);
-    }
+    sendStatusMessage(garage->getMacAddress());
 
     PeerDevice* small_gate = findPeerByDevice(DEV_SMALL_GATE);
-    if (small_gate) {
-        SmallGateDevice* gd = static_cast<SmallGateDevice*>(small_gate);
-        EspNowMessage msg{};
-        msg.deviceId = gd->getDeviceId();
-        msg.command = CMD_STATUS;
-        msg.smallGateActual = gd->getState().smallGateActual;
-        msg.stateOn = gd->getState().isOn;
-        msg.sequenceNum = getNextSequenceNum();
-        sendOrQueue(uiMac, msg);
-    }
+    sendStatusMessage(garage->getMacAddress());
 
     EspNowMessage msg{};
-    msg.deviceId = DEV_CENTRAL;
-    msg.command = CMD_STATUS;
-    msg.stateOn = (digitalRead(RELAY_PIN) == LOW);
-    msg.sequenceNum = getNextSequenceNum();
-    sendOrQueue(uiMac, msg);
+    sendUpdateState();
 }
-
+// Invio Heartbeat
 void PeerManager::sendHeartbeat() {
     for (PeerDevice* p : peers) {
-        EspNowMessage hb{};
-        hb.deviceId = p->getDeviceId();
-        hb.command = CMD_STATUS;
-        hb.statePending = p->isOnline() ? 1 : 0;
-        hb.sequenceNum = getNextSequenceNum();
-        sendOrQueue(p->getMacAddress(), hb);
+        if (p->isOnline()) {
+            EspNowMessage msg{};
+            msg.deviceId = p->getDeviceId();
+            msg.command = CMD_STATUS;
+            msg.statePending = p->isOnline() ? 1 : 0;
+            msg.sequenceNum = getNextSequenceNum();
+            sendOrQueue(p->getMacAddress(), msg);
+        }
     }
 }
-
+// Ricerca Device offline
 void PeerManager::scanOfflinePeers() {
     unsigned long now = millis();
     for (PeerDevice* p : peers) {
@@ -154,32 +134,33 @@ void PeerManager::scanOfflinePeers() {
             peerStatus.command = CMD_STATUS;
             peerStatus.statePending = 0;
             peerStatus.sequenceNum = getNextSequenceNum();
-            mirrorStatusToUIs(peerStatus, nullptr);
+            mirrorStatusToUIs(peerStatus);
         }
     }
 }
-
-void PeerManager::clearPendingForDevice(DeviceType dev) {
-    PeerDevice* target = findPeerByDevice(dev);
-    if (!target) return;
+// Abbassa il Pending (Priorità)
+void PeerManager::clearPendingForDevice(DeviceType devName) {
+    PeerDevice* device = findPeerByDevice(devName);
+    if (!device) return;
 
     // Chiama il metodo setPending dell'oggetto.
     // Il polimorfismo fa il resto: il compilatore sa che setPending
-    // dell'oggetto corretto (Garage o Gate) deve essere chiamato.
-    target->setPending(false);
+    // dell'oggetto Device corretto deve essere chiamato.
+    device->setPending(false);
 }
-
+// ritorna +1 dei messaggi inviati
 uint32_t PeerManager::getNextSequenceNum() {
     return ++sequenceNum;
 }
-
-void PeerManager::enqueueRetryPrio(const uint8_t* mac, const EspNowMessage& msg, MsgPrio prio) {
+// Scrive il messaggio in 
+void PeerManager::enqueueRetryPrio( MsgPrio prio, const EspNowMessage& msg) {
+    // Se retryCount è pieno, scrive msg su un msgPending non prioritario
     if (retryCount >= RETRY_Q_SIZE) {
         for (int i = 0; i < RETRY_Q_SIZE; ++i) {
             if (retryQueue[i].prio < prio) {
                 Serial.println("[queue] Full, dropping a low prio message");
                 retryQueue[i] = {};
-                memcpy(retryQueue[i].mac, mac, 6);
+                memcpy(retryQueue[i].mac, findPeerByDevice(msg.deviceId)->getMacAddress(), 6);
                 retryQueue[i].msg = msg;
                 retryQueue[i].prio = prio;
                 retryQueue[i].active = true;
@@ -188,9 +169,10 @@ void PeerManager::enqueueRetryPrio(const uint8_t* mac, const EspNowMessage& msg,
         }
         return;
     }
+    // Altrimenti aggiunge msg in coda a msgPending
     for (int i = 0; i < RETRY_Q_SIZE; ++i) {
         if (!retryQueue[i].active) {
-            memcpy(retryQueue[i].mac, mac, 6);
+            memcpy(retryQueue[i].mac, findPeerByDevice(msg.deviceId)->getMacAddress(), 6);
             retryQueue[i].msg = msg;
             retryQueue[i].prio = prio;
             retryQueue[i].active = true;
@@ -199,15 +181,21 @@ void PeerManager::enqueueRetryPrio(const uint8_t* mac, const EspNowMessage& msg,
         }
     }
 }
-
+// Messaggio prioritario
 MsgPrio PeerManager::classifyPrio(const EspNowMessage& msg) {
-    if (msg.command == CMD_TOGGLE) {
+    if (msg.command == CMD_TOGGLE || msg.command == CMD_OPEN || msg.command == CMD_CALL || msg.command == CMD_ACK) {
         return MsgPrio::High;
     }
     return MsgPrio::Low;
 }
-
-bool sendEspNowMessage(const uint8_t* mac, const EspNowMessage& msg) {
+/*
+    *       Invio msg al Device associato tramite mac 
+    **      ritorna ESP_OK
+    ***     return 0    // se esp_now_send 
+                            * è riuscito ad inviare 
+                                                    * Device = msg.mac
+*/
+bool PeerManager::sendEspNowMessage(const uint8_t* mac, const EspNowMessage& msg) {
     esp_err_t result = esp_now_send(mac, (const uint8_t*)&msg, sizeof(msg));
     return result == ESP_OK;
 }
@@ -218,35 +206,116 @@ void PeerManager::sendAck(const uint8_t* macDest) {
     ackMsg.deviceId = DEV_CENTRAL_MASTER; // Chi risponde (la centrale)
     ackMsg.command = CMD_ACK;             // Il comando di conferma
     ackMsg.sequenceNum = 0; 
-    
     // Usa sendEspNowMessage globale (definito in PeerManager.h)
-    sendEspNowMessage(macDest, ackMsg);
+    if (!sendEspNowMessage(macDest, ackMsg)) {
+        Serial.printf("Send ACK[%u].\n", 
+            (unsigned)findPeerByMac(macDest)->getDeviceId());
+    } else {
+        Serial.printf("Send ACK[%u].\n", 
+            (unsigned)findPeerByMac(macDest)->getDeviceId());
+    }
 }
+// Invio un messaggio di Risposta Iniziale per il Device associato a mac
+void PeerManager::sendPongMessage(const uint8_t* macDevice) {
+    EspNowMessage pongMsg = {};
+    pongMsg.deviceId = DEV_CENTRAL_MASTER;
+    pongMsg.command = CMD_PONG;
+    pongMsg.sequenceNum = 0; 
+    pongMsg.value = 0;
+    if (!sendEspNowMessage(macDevice, pongMsg)) {
+        Serial.println("[DisplayDevice] PONG inviato con successo.");
+    } else {
+        Serial.println("[DisplayDevice] ❌ Errore nell'invio del PONG.");
+    }
+}
+// Invio un messaggio di Stutus 
+void PeerManager::sendUpdateState() {
+    EspNowMessage msg{};
+    msg.deviceId = DEV_CENTRAL_MASTER;
+    msg.command = CMD_STATUS;
+    msg.stateOn = getState().isOnLight;
+    msg.sequenceNum = getNextSequenceNum(); 
+    mirrorStatusToUIs(msg); 
+}
+// Invio un messaggio di Status a devName
+void PeerManager::sendStatusMessage(const uint8_t* uiMac) {
+    EspNowMessage msg{};
+    msg.deviceId = findPeerByMac(uiMac)->getDeviceId();
+    msg.command = CMD_STATUS;
 
+    if (msg.deviceId == DEV_GARAGE) {
+        PeerDevice* garage = findPeerByDevice(msg.deviceId);
+        msg.stateOn = garage->getGarageState().isOnLight;
+    }
+    else if (msg.deviceId == DEV_GATE) {
+        PeerDevice* gate = findPeerByDevice(msg.deviceId);
+        msg.gateActual = gate->getGateState().gateActual;
+        msg.stateOn = gate->getGateState().isMoving;
+    }
+    else if (msg.deviceId == DEV_SMALL_GATE) {
+        PeerDevice* smallGate = findPeerByDevice(msg.deviceId);
+        msg.stateOn = smallGate->getSmallGateState().isOnLight;
+        msg.smallGateActual = smallGate->getSmallGateState().smallGateActual;
+        msg.stateCall = smallGate->getSmallGateState().isCall;
+    }
+    
+    msg.sequenceNum = getNextSequenceNum(); 
+    sendOrQueue(uiMac, msg);
+}
+// Invio un messaggio di Toggle a devName
+void PeerManager::sendToggleMessage(DeviceType devName) {
+    EspNowMessage msg{};
+    msg.deviceId = devName;
+    msg.command = CMD_TOGGLE;
+    msg.sequenceNum = getNextSequenceNum();
+    PeerDevice* device = findPeerByDevice(msg.deviceId);
+    sendOrQueue(device->getMacAddress(), msg);
+}
+// Invio un messaggio di Apertura Cancello a msg.deviceId 
+void PeerManager::sendOpenSmallGateMessage() {
+    EspNowMessage msg{};
+    msg.deviceId = DEV_SMALL_GATE;
+    msg.command = CMD_OPEN;
+    msg.sequenceNum = getNextSequenceNum();
+    PeerDevice* device = findPeerByDevice(msg.deviceId);
+    sendOrQueue(device->getMacAddress(), msg);
+}
+// Replica del messaggio ricevuto dal DisplayDevice
+void PeerManager::replyMessage(const EspNowMessage& reply) {
+    PeerDevice* device = findPeerByDevice(reply.deviceId);
+    if (!device) return;
+    EspNowMessage msg{};
+    msg = reply;
+    sendOrQueue(device->getMacAddress(), msg);
+}
+// Settaggio Timer PeerManager
 void PeerManager::setTimer() {
-    switchOffSecurityTimer.reset();
+    switchOffSecurityTimer.setInterval(OFF_TIMER_LIGHT_INTERVAL_MS);
+    debounceLDRTimer.setInterval(DEBOUNCE_LDR_MS);
+    heartbeatTimer.setInterval(HEARTBEAT_INTERVAL_MS);
+    retryTimer.setInterval(RETRY_INTERVAL_MS);
 }
-
-
+// Settaggio Luci PeerManager
 void PeerManager::setState(bool new_state) {
-    state.isOn = new_state;
+    state.isOnLight = new_state;
+    if (!state.isOnLight) digitalWrite(RELAY_PIN, HIGH);
+    else digitalWrite(RELAY_PIN, LOW);
 }
-
+// Loop interni condivisi con il loop principale
 void PeerManager::loop() {
-    if (state.isOn) {
+    // Gestione Stato Luci Esterne
+    if (state.isOnLight) {
         if (!switchOffSecurityTimer.check()) switchOffSecurityTimer.reset();
         else {
             if (switchOffSecurityTimer.isExpired()) {
                 digitalWrite(RELAY_PIN, HIGH);
-                state.isOn = false;
-                EspNowMessage pending{};
-                pending.stateOn = state.isOn;
-                pending.deviceId = DEV_CENTRAL_MASTER;
-                pending.command = CMD_STATUS;
-                mirrorStatusToUIs(pending, nullptr);
+                state.isOnLight = false;
+                sendUpdateState();
             }
         }
     } else if (switchOffSecurityTimer.check()) switchOffSecurityTimer.stop();
+
+
 
     // Itera su tutti i dispositivi registrati e chiama il loro loop()
     // NB: Questo presume che i tuoi dispositivi siano in un array/vettore
@@ -257,4 +326,8 @@ void PeerManager::loop() {
             p->loop();
         }
     }
+
+    scanOfflinePeers();
+    if (heartbeatTimer.checkAndReset()) sendHeartbeat();
+    if (retryTimer.checkAndReset()) processRetryQueue();
 }
